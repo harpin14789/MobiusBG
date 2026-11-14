@@ -36,4 +36,4 @@ This history summarizes work represented in the repository; it does not claim th
 
 ## Shared development handoff
 
-- Added `PROJECT_HANDOFF.md` and instructions for developers and coding agents to maintain the handoff and changelog as the project evolves.
+- Added `PROJECT_HANDOFF.md` and instructions for developers and AI coding assistants using any model or tool to maintain the handoff and changelog as the project evolves.

@@ -44,8 +44,8 @@ Before starting, pull the latest changes and check `git status`. Preserve existi
 
 ## Keeping the handoff current
 
-Every developer or coding agent working on MobiusBG should update this file and [CHANGELOG.md](CHANGELOG.md) alongside development changes. Keep the sections above accurate for the current application; record concise recent handoff notes below when useful, including verification, deployment steps, known issues, and unfinished work. Avoid duplicating sensitive data or credentials. Review Git history and the current code when resuming work, since deployments and service settings can change independently.
+Every developer and AI coding assistant, regardless of model or tool, working on MobiusBG should read [AGENTS.md](AGENTS.md) and update this file and [CHANGELOG.md](CHANGELOG.md) alongside development changes. Keep the sections above accurate for the current application; record concise recent handoff notes below when useful, including verification, deployment steps, known issues, and unfinished work. Avoid duplicating sensitive data or credentials. Review Git history and the current code when resuming work, since deployments and service settings can change independently.
 
 ### Recent development handoff
 
-- Shared documentation instructions added so future contributors update the handoff and changelog together with development work. Documentation-only change; no application behavior or service configuration changed.
+- Shared documentation instructions apply to developers and AI coding assistants using any model or tool. Update the handoff and changelog together with development work. This documentation update changes no application behavior or service configuration.
