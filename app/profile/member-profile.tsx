@@ -12,7 +12,7 @@ type MemberProfileData = {
   id: string; full_name: string; email: string; phone: string; discord: string;
   role: string; active: boolean; own_profile: boolean; payment_method: PaymentMethod;
   payment_details: Record<string,string>; payment_updated_at: string | null;
-  payment_methods: Record<string,Record<string,string>>;
+  payment_methods: Record<string,Record<string,string>>; region: string | null;
 };
 const paymentNames = { none: "Not set", bank: "US bank transfer", zelle: "Zelle", taekus: "Taekus Pay" };
 const fieldNames: Record<string,string> = {
@@ -55,6 +55,9 @@ export default function MemberProfile() {
   async function fetchProfile(c:SupabaseClient,target:string|null,reveal:boolean){
     const {data,error}=await c.rpc('get_member_profile',{p_member_id:target,p_reveal_payment:false});
     if(error)throw error;
+    const regionResult=await c.from('profiles').select('region').eq('id',data.id).single();
+    if(regionResult.error)throw regionResult.error;
+    data.region=regionResult.data.region;
     if(data.own_profile && data.role==='super_admin')return {...data,payment_methods:{}};
     const methods=await c.rpc('get_member_payment_methods',{p_member_id:target,p_reveal_payment:reveal});
     if(methods.error)throw methods.error;
@@ -114,6 +117,16 @@ export default function MemberProfile() {
     applyProfile(data);setRevision(n=>n+1);
   }
 
+  async function saveRegion(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();
+    if(!client||!profile?.own_profile||busy)return;
+    const region=String(new FormData(event.currentTarget).get('region')||'');
+    setBusy(true);setError('');setMessage('');
+    try{const {error}=await client.rpc('set_member_region',{p_region:region});if(error)throw error;await reload();setMessage('Region saved. Existing reservations are unchanged.');}
+    catch(e){setError(e instanceof Error?e.message:'Could not save your region.');}
+    finally{setBusy(false);}
+  }
+
   async function revealBank(){
     if(busy)return;
     setBusy(true);setError("");
@@ -156,7 +169,7 @@ export default function MemberProfile() {
       {loading ? <p role="status">Loading profile…</p> : !signedIn ? <p><Link href="/workspace">Sign in</Link> to view your profile.</p> : profile ? <>
         <p className={styles.description}>{profile.own_profile ? profile.role==='super_admin' ? "Keep your contact information up to date." : "Keep your contact and payout information up to date." : "Private member profile · Super-admin access"}</p>
         {!profile.own_profile ? <>
-          <dl className={styles.details}><dt>Name</dt><dd>{profile.full_name||"Not provided"}</dd><dt>Email</dt><dd>{profile.email}</dd><dt>Phone / WhatsApp</dt><dd>{profile.phone||"Not provided"}</dd><dt>Discord</dt><dd>{profile.discord||"Not provided"}</dd><dt>Membership</dt><dd>{profile.active?"Active":"Awaiting approval"} · {profile.role.replace("_"," ")}</dd></dl>
+          <dl className={styles.details}><dt>Name</dt><dd>{profile.full_name||"Not provided"}</dd><dt>Email</dt><dd>{profile.email}</dd><dt>Phone / WhatsApp</dt><dd>{profile.phone||"Not provided"}</dd><dt>Discord</dt><dd>{profile.discord||"Not provided"}</dd><dt>Region</dt><dd>{profile.region ? profile.region[0].toUpperCase()+profile.region.slice(1) : "Not provided"}</dd><dt>Membership</dt><dd>{profile.active?"Active":"Awaiting approval"} · {profile.role.replace("_"," ")}</dd></dl>
           <h2>Payment methods</h2>{!Object.keys(profile.payment_methods).length && <p>Not provided</p>}
           {Object.entries(profile.payment_methods).map(([methodName,details])=><section key={methodName}><h3>{paymentNames[methodName as PaymentMethod]}</h3><dl className={styles.details}>{Object.entries(details).map(([key,value])=><div className={styles.detailPair} key={key}><dt>{fieldNames[key]||key}</dt><dd>{key==='account_last4'?`•••• ${value}`:value}</dd></div>)}</dl></section>)}
           {profile.payment_methods.bank && <button type="button" className="primary" disabled={busy} onClick={revealBank}>{bank.account_number?"Hide bank details":"Show bank details"}</button>}
@@ -184,7 +197,7 @@ export default function MemberProfile() {
               })}
             </div>}
           </section>
-        </> : <form key={revision} onSubmit={save} autoComplete="off">
+        </> : <>{profile.role==='member' && <form key={`region-${revision}`} onSubmit={saveRegion}><label>Region<select name="region" defaultValue={profile.region||''} required><option value="" disabled>Select your region</option><option value="west">West</option><option value="central">Central</option><option value="east">East</option></select></label><p className={styles.description}>This will be used for future deal commitments when regional capacity is available.</p><button className="primary" type="submit" disabled={busy}>Save region</button></form>}<form key={revision} onSubmit={save} autoComplete="off">
           <label>Full name<input name="full_name" maxLength={120} defaultValue={profile.full_name} autoComplete="name" required /></label>
           <label>Email<input type="email" value={profile.email} readOnly /></label>
           <div className={styles.row}><label>Phone / WhatsApp<input name="phone" maxLength={40} defaultValue={profile.phone} autoComplete="tel" /></label><label>Discord tag<input name="discord" maxLength={100} defaultValue={profile.discord} /></label></div>
@@ -202,7 +215,7 @@ export default function MemberProfile() {
           <label className="checkbox-label"><input type="checkbox" checked={enabled.taekus} onChange={e=>setEnabled(v=>({...v,taekus:e.target.checked}))} />Taekus Pay</label>
           {enabled.taekus && <div key="taekus"><label>Exact name on Taekus<input name="taekus_name" defaultValue={taekus.name || ''} maxLength={120} required /></label><label>Taekus Pay alphanumeric code<input name="code" defaultValue={taekus.code || ''} pattern="[A-Za-z0-9]+" maxLength={128} autoComplete="off" spellCheck={false} required /></label></div>}</>}
           <button className="primary full" disabled={busy}>{busy?"Saving…":"Save profile"}</button>
-        </form>}
+        </form></>}
         {profile.payment_updated_at && (!profile.own_profile || profile.role!=='super_admin') && <p className={styles.description}>Payment details last saved: {new Date(profile.payment_updated_at).toLocaleString()}</p>}
       </> : null}
       {error && <p role="alert" className="error">{error}</p>}

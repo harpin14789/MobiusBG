@@ -49,3 +49,7 @@ This history summarizes work represented in the repository; it does not claim th
 - Recorded planning decisions: use the member’s saved profile region, allow multiple delivery methods per deal, and support both per-unit and separate-dollar pending payout adjustments.
 
 - Recorded planning decisions to retain reservation regions, determine label eligibility from deal settings and minimum quantity, and email secure label download links.
+
+## Member region foundation (in development)
+
+- Added an optional saved member profile region, with database access checks. Regional commitment caps and reservation-region snapshots are not implemented yet.

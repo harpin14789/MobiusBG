@@ -44,7 +44,7 @@ Before starting, pull the latest changes and check `git status`. Preserve existi
 
 ## Planned requirements
 
-The co-founder’s proposed regional and fulfillment commitment caps, label delivery, Blue Ocean receipt verification, pending-payment adjustments, invoices, and possible ACH export are recorded in [future fulfillment requirements](docs/future-fulfillment-requirements.md). These are not yet implemented; review the staged implementation plan and open decisions in that document before building. The owner chose separate caps for each region and delivery-method combination, the member’s saved profile region, multiple allowed methods per deal, deal-level label eligibility and minimum quantity, secure label download links, and both per-unit and separate-dollar pending payout adjustments. Existing reservations retain their original region when a member changes their profile. Invoices are deferred until the other functionality is in place. In particular, post-receipt payout adjustments conflict with the current rule locking reservation prices after receipt.
+The co-founder’s proposed regional and fulfillment commitment caps, label delivery, Blue Ocean receipt verification, pending-payment adjustments, invoices, and possible ACH export are recorded in [future fulfillment requirements](docs/future-fulfillment-requirements.md). The profile region field is implemented as the first stage; the remaining workflow is not yet implemented. Review the staged implementation plan and open decisions in that document before building. The owner chose separate caps for each region and delivery-method combination, the member’s saved profile region, multiple allowed methods per deal, deal-level label eligibility and minimum quantity, secure label download links, and both per-unit and separate-dollar pending payout adjustments. Existing reservations retain their original region when a member changes their profile. Invoices are deferred until the other functionality is in place. In particular, post-receipt payout adjustments conflict with the current rule locking reservation prices after receipt.
 
 ## Keeping the handoff current
 
@@ -53,3 +53,5 @@ Every developer and AI coding assistant, regardless of model or tool, working on
 ### Recent development handoff
 
 - Shared documentation instructions apply to developers and AI coding assistants using any model or tool. Update the handoff and changelog together with development work. This documentation update changes no application behavior or service configuration.
+
+- Member profile region foundation: migration `20261114001200_member_regions.sql` and profile UI add an optional West/Central/East region. The migration was applied to the hosted database; it does not yet enforce regional caps or snapshot existing reservation regions. Local profile permissions and browser tests passed.

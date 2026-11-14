@@ -506,6 +506,13 @@ test('payment profiles enforce private access, mask bank details, and notify onl
   const staff=await user(`payment-poster-${run}@example.test`,'admin',true);
   let older=await service.rpc('claim_payment_change_alerts');
   for(let i=0;i<100 && older.data.length;i++)older=await service.rpc('claim_payment_change_alerts');
+  expect((await memberAccount.client.rpc('set_member_region',{p_region:'west'})).error).toBeNull();
+  expect((await memberAccount.client.rpc('set_member_region',{p_region:'invalid'})).error).not.toBeNull();
+  expect((await staff.client.rpc('set_member_region',{p_region:'east'})).error).not.toBeNull();
+  const region=await memberAccount.client.from('profiles').select('region').eq('id',memberAccount.id).single();
+  expect(region.data?.region).toBe('west');
+  expect((await other.from('profiles').select('region').eq('id',memberAccount.id)).data).toEqual([]);
+  expect((await admin.from('profiles').select('region').eq('id',memberAccount.id).single()).data?.region).toBe('west');
   const bank={account_holder:'Test Member',bank_name:'Test Bank',account_type:'checking',routing_number:'021000021',account_number:'000123456789'};
   const fields={p_full_name:'Test Member',p_phone:'555-0100',p_discord:'testmember',p_payment_method:'bank',p_payment_details:bank};
   expect((await memberAccount.client.rpc('save_member_profile',fields)).error).toBeNull();
@@ -548,6 +555,11 @@ test('members edit payment profiles and the super admin opens their profile from
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
   await page.getByRole('link',{name:'My profile',exact:true}).click();
   await expect(page.getByRole('heading',{name:'My profile',exact:true})).toBeVisible();
+  await page.getByRole('combobox',{name:'Region'}).selectOption('central');
+  await page.getByRole('button',{name:'Save region'}).click();
+  await expect(page.getByRole('status')).toContainText('Region saved');
+  await page.reload();
+  await expect(page.getByRole('combobox',{name:'Region'})).toHaveValue('central');
   await page.getByLabel('Full name',{exact:true}).fill('Profile Test Member');
   await page.getByLabel('Phone / WhatsApp',{exact:true}).fill('555-0100');
   await page.getByLabel('US bank transfer',{exact:true}).check();
