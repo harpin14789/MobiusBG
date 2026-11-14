@@ -99,7 +99,7 @@ test('deactivated users lose access immediately, including existing sessions',as
 });
 
 test('pending members cannot enter the workspace through the browser',async({page})=>{
-  await page.goto('/');
+  await page.goto('/workspace');
   await page.getByLabel('Email',{exact:true}).fill(emails.pending);
   await page.getByLabel('Password',{exact:true}).fill(password);
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
@@ -127,7 +127,7 @@ test('invitation links let a new member set their password without granting memb
 test('real browser login, reservation, delivery, and admin receipt/payment workflow',async({browser,page})=>{
   const id=await deal(4);
   const title=(await admin.from('deals').select('title').eq('id',id).single()).data!.title;
-  await page.goto('/');
+  await page.goto('/workspace');
   await page.getByLabel('Email',{exact:true}).fill(emails.member);
   await page.getByLabel('Password',{exact:true}).fill(password);
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
@@ -148,7 +148,7 @@ test('real browser login, reservation, delivery, and admin receipt/payment workf
   await expect(row).toContainText('2 units');
 
   const context=await browser.newContext(),adminPage=await context.newPage();
-  await adminPage.goto('/');
+  await adminPage.goto('/workspace');
   await adminPage.getByLabel('Email',{exact:true}).fill(emails.admin);
   await adminPage.getByLabel('Password',{exact:true}).fill(password);
   await adminPage.getByRole('button',{name:'Sign in',exact:true}).click();
