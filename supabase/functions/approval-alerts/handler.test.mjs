@@ -4,7 +4,7 @@ import { createHandler } from './handler.mjs';
 
 const secret = 'local-test-worker-secret';
 const alert = { member_id: '11111111-1111-4111-8111-111111111111', email: 'pending@example.test', lease_token: 'lease' };
-function fixture({ alerts = [alert], mailError, completeError, claimError } = {}) {
+function fixture({ alerts = [alert], paymentAlerts = [], mailError, completeError, claimError } = {}) {
   const sent = [], calls = [];
   const handler = createHandler({
     secret, sender: { address: 'sender@example.test' },
@@ -13,6 +13,7 @@ function fixture({ alerts = [alert], mailError, completeError, claimError } = {}
     client: { rpc: async (name, args) => {
       calls.push({ name, args });
       if (name === 'claim_approval_alerts') return { data: alerts, error: claimError };
+      if (name === 'claim_payment_change_alerts') return { data: paymentAlerts, error: null };
       return { data: !completeError, error: completeError };
     } },
   });
@@ -39,7 +40,7 @@ test('verified pending member alerts use a fixed recipient and authenticated wor
   assert.match(f.sent[0].text, /pending@example\.test/);
   assert.match(f.sent[0].text, /https:\/\/mobius\.example\.test\/workspace/);
   assert.ok(!f.sent[0].text.includes('spoof@example.test'));
-  assert.deepEqual(f.calls[1].args, {
+  assert.deepEqual(f.calls.find(c => c.name === 'complete_approval_alert').args, {
     p_member_id: alert.member_id, p_lease_token: alert.lease_token, p_sent: true, p_error: null,
   });
 });
@@ -55,8 +56,8 @@ test('delivery failure releases the lease for retry without storing SMTP details
   const f = fixture({ mailError: error });
   const result = await f.request();
   assert.equal(result.status, 503);
-  assert.equal(f.calls[1].args.p_sent, false);
-  assert.equal(f.calls[1].args.p_error, 'EAUTH');
+  assert.equal(f.calls.find(c => c.name === 'complete_approval_alert').args.p_sent, false);
+  assert.equal(f.calls.find(c => c.name === 'complete_approval_alert').args.p_error, 'EAUTH');
   assert.ok(!JSON.stringify(f.calls).includes('sensitive'));
 });
 
@@ -73,4 +74,15 @@ test('authenticated setup test sends only to the configured owner and does not t
   assert.equal((await f.request({ action: 'test', to: 'attacker@example.test' })).status, 200);
   assert.equal(f.sent[0].to, 'owner@example.test');
   assert.deepEqual(f.calls, []);
+});
+
+test('payment update alerts identify the member without copying private payment details', async () => {
+  const f = fixture({ alerts: [], paymentAlerts: [{...alert,id:'payment-event-id',full_name:'Test Member',account_number:'sensitive-bank-number',code:'secret-code'}] });
+  assert.equal((await f.request()).status, 200);
+  assert.match(f.sent[0].subject,/payment information updated/);
+  assert.match(f.sent[0].text,/Test Member/);
+  assert.match(f.sent[0].text,/pending@example.test/);
+  assert.ok(!f.sent[0].text.includes('sensitive-bank-number'));
+  assert.ok(!f.sent[0].text.includes('secret-code'));
+  assert.equal(f.calls.find(c=>c.name==='complete_payment_change_alert').args.p_id,'payment-event-id');
 });

@@ -2,7 +2,7 @@
 
 | Role | Access |
 | --- | --- |
-| Super admin | Full group operations, delivery/payment records, membership approval, and role management. |
+| Super admin | Full group operations, delivery/payment records, membership approval, profiles, and role management. Cannot reserve units. |
 | Admin | View deals and post new deals only. No reservations, delivery/payment records, audit log, membership approval, or role assignment. |
 | Member | View available deals, reserve units, submit their own deliveries, and read their own payout records. |
 

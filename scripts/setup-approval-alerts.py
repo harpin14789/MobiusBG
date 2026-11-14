@@ -46,7 +46,7 @@ def sql_string(value):
 
 
 def migrate():
-    for name in ["20261114000100_member_roles", "20261114000200_approval_alerts", "20261114000300_delivery_submissions", "20261114000400_shipping_label_requests"]:
+    for name in ["20261114000100_member_roles", "20261114000200_approval_alerts", "20261114000300_delivery_submissions", "20261114000400_shipping_label_requests", "20261114000500_member_payment_profiles", "20261114000600_member_reservations_only"]:
         version = name.split("_")[0]
         done = query("select version from supabase_migrations.schema_migrations where version = " + sql_string(version), True)
         if done:

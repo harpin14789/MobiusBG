@@ -251,6 +251,9 @@ test('approval alert queue requires email verification, protects leases, and ski
   let claimed=await service.rpc('claim_approval_alerts');
   expect(claimed.error).toBeNull();
   expect(claimed.data.some((r:{member_id:string})=>r.member_id===id)).toBe(false);
+  // Lease older local test events so this assertion is independent of
+  // retained test data and the production worker's bounded batch size.
+  for(let i=0;i<100 && claimed.data.length;i++) claimed=await service.rpc('claim_approval_alerts');
   expect((await service.auth.admin.updateUserById(id,{email_confirm:true})).error).toBeNull();
   claimed=await service.rpc('claim_approval_alerts');
   expect(claimed.error).toBeNull();
@@ -335,6 +338,109 @@ test('shipping labels enforce deal eligibility and box minimums and can be handl
     await expect.poll(async()=> (await member.from('label_requests').select('status').eq('id',request.id).single()).data?.status).toBe('in_progress');
     expect((await member.rpc('save_label_request',fields)).error).not.toBeNull();
   } finally {await context.close();}
+});
+
+test('payment profiles enforce private access, mask bank details, and notify only for real payment changes',async()=>{
+  const memberAccount=await user(`payment-${run}@example.test`,'member',true);
+  const staff=await user(`payment-poster-${run}@example.test`,'admin',true);
+  let older=await service.rpc('claim_payment_change_alerts');
+  for(let i=0;i<100 && older.data.length;i++)older=await service.rpc('claim_payment_change_alerts');
+  const bank={account_holder:'Test Member',bank_name:'Test Bank',account_type:'checking',routing_number:'021000021',account_number:'000123456789'};
+  const fields={p_full_name:'Test Member',p_phone:'555-0100',p_discord:'testmember',p_payment_method:'bank',p_payment_details:bank};
+  expect((await memberAccount.client.rpc('save_member_profile',fields)).error).toBeNull();
+  const masked=await memberAccount.client.rpc('get_member_profile',{p_member_id:null,p_reveal_payment:false});
+  expect(masked.error).toBeNull();
+  expect(masked.data).toMatchObject({full_name:'Test Member',payment_method:'bank',payment_details:{account_last4:'6789'}});
+  expect(masked.data.payment_details).not.toHaveProperty('account_number');
+  expect(masked.data.payment_details).not.toHaveProperty('routing_number');
+  const ownerView=await admin.rpc('get_member_profile',{p_member_id:memberAccount.id,p_reveal_payment:true});
+  expect(ownerView.error).toBeNull();expect(ownerView.data.payment_details).toEqual(bank);
+  expect((await other.rpc('get_member_profile',{p_member_id:memberAccount.id,p_reveal_payment:true})).error).not.toBeNull();
+  expect((await publicClient().rpc('get_member_profile',{p_member_id:memberAccount.id,p_reveal_payment:true})).error).not.toBeNull();
+  expect((await staff.client.rpc('get_member_profile',{p_member_id:memberAccount.id,p_reveal_payment:true})).error).not.toBeNull();
+  expect((await staff.client.rpc('save_member_profile',fields)).error).not.toBeNull();
+  const initial=await service.rpc('claim_payment_change_alerts');
+  expect(initial.error).toBeNull();expect(initial.data).toHaveLength(1);
+  expect(initial.data[0]).toMatchObject({member_id:memberAccount.id,full_name:'Test Member'});
+  expect(initial.data[0]).not.toHaveProperty('payment_details');
+  const ack=await service.rpc('complete_payment_change_alert',{p_id:initial.data[0].id,p_lease_token:initial.data[0].lease_token,p_sent:true,p_error:null});
+  expect(ack.data).toBe(true);
+  expect((await memberAccount.client.rpc('save_member_profile',{...fields,p_payment_details:{...bank,routing_number:'',account_number:''}})).error).toBeNull();
+  expect((await service.rpc('claim_payment_change_alerts')).data).toEqual([]);
+  expect((await memberAccount.client.rpc('save_member_profile',{...fields,p_payment_details:{...bank,account_number:'000123456788'}})).error).toBeNull();
+  const changed=await service.rpc('claim_payment_change_alerts');
+  expect(changed.data).toHaveLength(1);expect(changed.data[0].id).not.toBe(initial.data[0].id);
+  expect((await memberAccount.client.rpc('save_member_profile',{...fields,p_payment_details:{...bank,routing_number:'123456789'}})).error).not.toBeNull();
+  expect((await memberAccount.client.rpc('save_member_profile',{...fields,p_payment_method:'taekus',p_payment_details:{name:'Test Member III',code:'AbC123xY9'}})).error).toBeNull();
+  const taekus=await admin.rpc('get_member_profile',{p_member_id:memberAccount.id,p_reveal_payment:false});
+  expect(taekus.data.payment_details).toEqual({name:'Test Member III',code:'AbC123xY9'});
+  expect((await memberAccount.client.rpc('save_member_profile',{...fields,p_payment_method:'taekus',p_payment_details:{name:'Test',code:'invalid-code'}})).error).not.toBeNull();
+  expect((await memberAccount.client.rpc('save_member_profile',{...fields,p_payment_method:'zelle',p_payment_details:{name:'Test Member',identifier:'test@example.test'}})).error).toBeNull();
+});
+
+test('members edit payment profiles and the super admin opens their profile from Members',async({page,browser})=>{
+  const email=`profile-ui-${run}@example.test`;
+  const created=await user(email,'member',true);
+  await page.goto('/workspace');
+  await page.getByLabel('Email',{exact:true}).fill(email);
+  await page.getByLabel('Password',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByRole('link',{name:'My profile',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'My profile',exact:true})).toBeVisible();
+  await page.getByLabel('Full name',{exact:true}).fill('Profile Test Member');
+  await page.getByLabel('Phone / WhatsApp',{exact:true}).fill('555-0100');
+  await page.getByLabel('Payment method',{exact:true}).selectOption('taekus');
+  await page.getByLabel('Exact name on Taekus',{exact:true}).fill('Profile Test Member Jr');
+  await page.getByLabel('Taekus Pay alphanumeric code',{exact:true}).fill('TAEKUS123abc');
+  await page.getByRole('button',{name:'Save profile',exact:true}).click();
+  await expect(page.getByRole('status')).toContainText('Profile saved');
+  const context=await browser.newContext(),owner=await context.newPage();
+  try{
+    await owner.goto('/workspace');
+    await owner.getByLabel('Email',{exact:true}).fill(emails.admin);
+    await owner.getByLabel('Password',{exact:true}).fill(password);
+    await owner.getByRole('button',{name:'Sign in',exact:true}).click();
+    await owner.getByRole('button',{name:'Members',exact:true}).click();
+    const row=owner.locator('tbody tr').filter({hasText:email});
+    await expect(row).toContainText('Profile Test Member');
+    await row.getByRole('link').click();
+    await expect(owner.getByRole('heading',{name:'Profile Test Member',exact:true})).toBeVisible();
+    await expect(owner.getByText('TAEKUS123abc',{exact:true})).toBeVisible();
+    await expect(owner.getByText('Profile Test Member Jr',{exact:true})).toBeVisible();
+    await expect(owner.getByRole('button',{name:'Save profile',exact:true})).toHaveCount(0);
+    expect((await other.rpc('get_member_profile',{p_member_id:created.id,p_reveal_payment:true})).error).not.toBeNull();
+  }finally{await context.close();}
+});
+
+test('super admin manages grouped reservations and only members can reserve units',async({page})=>{
+  const id=await deal(10);
+  const title=(await admin.from('deals').select('title').eq('id',id).single()).data!.title;
+  expect((await reserve(member,id,2)).error).toBeNull();
+  expect((await reserve(other,id,3)).error).toBeNull();
+  expect((await reserve(admin,id,1)).error).not.toBeNull();
+  await page.goto('/workspace');
+  await page.getByLabel('Email',{exact:true}).fill(emails.admin);
+  await page.getByLabel('Password',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await expect(page.getByRole('button',{name:'My reservations',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Reserve units',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Reservations',exact:true}).click();
+  await page.getByLabel('Search reservations by deal or member').fill(title);
+  const group=page.locator('tbody tr').filter({hasText:title});
+  await expect(group).toContainText('5 / 10');
+  await group.getByRole('button',{name:'View reservations',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:`Reservations · ${title}`,exact:true});
+  await expect(dialog).toContainText(emails.member);
+  await expect(dialog).toContainText(emails.other);
+  await expect(dialog.locator('tbody tr')).toHaveCount(2);
+  await dialog.getByRole('button',{name:'Manage deliveries',exact:true}).click();
+  await expect(page.getByLabel('Search group reservations')).toHaveValue(title);
+  await expect(page.locator('tbody tr')).toHaveCount(2);
+  await page.getByRole('button',{name:'Members',exact:true}).click();
+  await page.getByLabel('Search members',{exact:true}).fill(emails.pending);
+  await page.getByLabel('Membership status',{exact:true}).selectOption('pending');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect(page.locator('tbody tr')).toContainText(emails.pending);
 });
 
 test('invitation links let a new member set their password without granting membership',async({page})=>{

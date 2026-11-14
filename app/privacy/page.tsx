@@ -24,13 +24,14 @@ export default function PrivacyPage() {
         <section aria-labelledby="collect">
           <h2 id="collect">1. Information we collect</h2>
           <ul>
-            <li><strong>Account information:</strong> your email address, account identifier, membership role, approval status, and account-related timestamps. When you register using email and a password, Supabase handles password authentication.</li>
+            <li><strong>Account and profile information:</strong> your email address, full name, optional phone/WhatsApp and Discord contact, account identifier, membership role, approval status, and account-related timestamps. When you register using email and a password, Supabase handles password authentication.</li>
             <li><strong>Google sign-in information:</strong> if you choose Google, we receive the account identifier and basic profile information Google provides, such as your email address, name, and profile picture. Mobius does not receive your Google password.</li>
             <li><strong>Buying group records:</strong> deals you create or reserve, reserved quantities, saved payout terms, delivery methods, tracking numbers or drop-off references, received quantities, and recorded payments. We also keep audit records of relevant membership and transaction changes.</li>
             <li><strong>Communications:</strong> information you choose to send when contacting us or requesting support.</li>
+            <li><strong>Payout information:</strong> the payment method you choose and its recipient details. US bank transfer profiles include account-holder and bank names, account type, routing number, and account number. Zelle profiles include a registered name and email or phone. Taekus Pay profiles include your exact platform name and payment code. Shipping-label requests include contact information, origin ZIP code, quantities per box, and box weights.</li>
             <li><strong>Technical information:</strong> our hosting and authentication providers may process IP addresses, browser and device information, sign-in events, and request logs to operate and protect the service.</li>
           </ul>
-          <p>Mobius records payout status; it does not process payments or request card numbers or bank-account details through the workspace. Please do not put sensitive financial information in delivery references or support messages.</p>
+          <p>Mobius records payout status and stores the payout details you provide to arrange payments outside the app. Saving payment information does not initiate a transfer. The workspace does not request card numbers. Please enter payout details only in your profile, rather than in delivery references or support messages.</p>
         </section>
 
         <section aria-labelledby="use">
@@ -46,7 +47,7 @@ export default function PrivacyPage() {
 
         <section aria-labelledby="sharing">
           <h2 id="sharing">4. Who can access information</h2>
-          <p>Approved members can see shared deals and group availability, along with their own reservations and payout details. Other members cannot view your private reservation and payout records through the workspace. Posting-only admins can view and create deals. The super administrator can access membership, delivery, and payment records to operate the buying group. When a new account verifies its email and awaits approval, we send its email address to the super administrator in an approval notification.</p>
+          <p>Approved members can see shared deals and group availability, along with their own reservations, profile, and payout details. Other members cannot view your private profile, reservation, or payout records through the workspace. Posting-only admins can view and create deals and cannot access member payment profiles. The super administrator can access membership, delivery, and payment records to operate the buying group. New verified accounts generate an approval notification. Payment-information changes generate a notification identifying the member and linking to their profile; the notification does not include bank numbers or payment codes.</p>
           <p>We use service providers to operate Mobius: <a href="https://supabase.com/privacy">Supabase</a> for authentication and database storage, <a href="https://www.netlify.com/privacy/">Netlify</a> for hosting, and <a href="https://policies.google.com/privacy">Google</a> when you choose Google sign-in. A configured email provider also processes recipient addresses and message contents to deliver account confirmation and recovery emails. These providers process information under their applicable terms and policies.</p>
           <p>We may disclose information when required by law or reasonably necessary to protect users, address fraud or security incidents, or enforce our agreements. We do not sell your personal information.</p>
         </section>
@@ -60,7 +61,7 @@ export default function PrivacyPage() {
         <section aria-labelledby="retention">
           <h2 id="retention">6. Retention and security</h2>
           <p>We retain account and buying group records for as long as reasonably needed to operate the service, resolve outstanding reservations or payments, maintain accounting and audit records, and meet applicable legal obligations. Closing or deactivating an account does not necessarily remove records needed for those purposes. Provider logs and backups may have separate retention periods.</p>
-          <p>We use authenticated accounts, membership approval, encrypted HTTPS connections, and database access controls to protect information. No online service can guarantee absolute security. Our service providers may process information in countries other than where you live.</p>
+          <p>We use authenticated accounts, membership approval, encrypted HTTPS connections, and database access controls to protect information. Stored payout payloads are additionally encrypted with a key held in Supabase Vault. Full bank-detail views are audited. No online service can guarantee absolute security. Our service providers may process information in countries other than where you live.</p>
         </section>
 
         <section aria-labelledby="choices">

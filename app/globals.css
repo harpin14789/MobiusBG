@@ -53,6 +53,10 @@
 .label-request-action { margin-top: 10px; }
 .label-request-action small { display: block; margin-bottom: 6px; }
 .label-offer { color: var(--green); font-size: 11px; padding: 8px 0; }
+.member-profile-link { color: var(--green); }
+.member-profile-link:hover { text-decoration: underline; }
+.wide-modal { width: 1000px; }
+.management-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
 .checkbox-label { display: flex; flex-direction: row; align-items: center; gap: 10px; }
 .checkbox-label input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 auto; }
 .google-auth {

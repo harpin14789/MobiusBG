@@ -6,6 +6,7 @@ export type Profile = {
   email: string;
   role: "member" | "admin" | "super_admin";
   active: boolean;
+  full_name?: string;
 };
 export const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

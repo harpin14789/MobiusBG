@@ -43,6 +43,7 @@ type Tab =
   | "Deliveries"
   | "Payouts"
   | "Members"
+  | "Reservations"
   | "Label requests";
 const nav = [
   { name: "Overview", icon: LayoutDashboard },
@@ -56,10 +57,12 @@ function Modal({
   title,
   close,
   children,
+  wide = false,
 }: {
   title: string;
   close: () => void;
   children: React.ReactNode;
+  wide?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -73,6 +76,7 @@ function Modal({
         if (e.target === e.currentTarget) close();
       }}
       aria-label={title}
+      className={wide ? "wide-modal" : undefined}
     >
       <div className="modal-header">
         <h2>{title}</h2>
@@ -124,6 +128,10 @@ export default function Dashboard({
   const [create, setCreate] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState("");
+  const [selectedReservationDeal, setSelectedReservationDeal] = useState<Deal | null>(null);
+  const [reservationSearch, setReservationSearch] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberStatus, setMemberStatus] = useState("all");
   async function reload() {
     if (!client) return;
     const result = await loadWorkspace(client, admin);
@@ -475,6 +483,13 @@ export default function Dashboard({
       );
   }
 
+  const visibleReservations = state.reservations.filter(r => !superAdmin ||
+    `${state.deals.find(d=>d.id===r.dealId)?.title} ${r.memberEmail || ""} ${members.find(m=>m.id===r.memberId)?.full_name || ""} ${r.reference}`.toLowerCase().includes(reservationSearch.toLowerCase()));
+  const reservationGroups = state.deals.map(deal => ({deal, entries: state.reservations.filter(r=>r.dealId===deal.id)}))
+    .filter(group => group.entries.length && `${group.deal.title} ${group.entries.map(r=>r.memberEmail || "").join(" ")}`.toLowerCase().includes(reservationSearch.toLowerCase()));
+  const groupReservations = <div className="table-wrap"><table><thead><tr><th>Deal</th><th>Reserved / capacity</th><th>Members</th><th>Received</th><th>Unpaid received units</th><th>Details</th></tr></thead><tbody>
+    {reservationGroups.map(({deal,entries})=><tr key={deal.id}><td><strong>{deal.title}</strong><small>Deadline: {deal.deadline}</small></td><td>{entries.reduce((n,r)=>n+r.quantity,0)} / {deal.capacity}</td><td>{new Set(entries.map(r=>r.memberId)).size}</td><td>{entries.reduce((n,r)=>n+r.received,0)}</td><td>{entries.reduce((n,r)=>n+r.received-r.paid,0)}</td><td><button className="small-button" onClick={()=>setSelectedReservationDeal(deal)}>View reservations</button></td></tr>)}
+  </tbody></table>{!reservationGroups.length && <p className="live-note">No group reservations match this search.</p>}</div>;
   const reservations = (
     <div className="table-wrap">
       <table>
@@ -489,7 +504,7 @@ export default function Dashboard({
           </tr>
         </thead>
         <tbody>
-          {state.reservations.map((r) => {
+          {visibleReservations.map((r) => {
             const deal = state.deals.find((d) => d.id === r.dealId)!;
             return (
               <tr key={r.id}>
@@ -498,7 +513,7 @@ export default function Dashboard({
                   <small>
                     {r.memberEmail && (
                       <>
-                        {r.memberEmail}
+                        {superAdmin ? <a className="member-profile-link" href={`/profile?member=${r.memberId}`}>{members.find(m=>m.id===r.memberId)?.full_name || r.memberEmail}</a> : r.memberEmail}
                         <br />
                       </>
                     )}
@@ -630,26 +645,31 @@ export default function Dashboard({
         <div className="nav-label">WORKSPACE</div>
         <nav>
           {[
-            ...nav.filter((item) => !postingOnly || item.name === "Deals"),
+            ...nav.filter((item) => !postingOnly || item.name === "Deals").map(item => superAdmin && item.name === "My reservations" ? {...item,name:"Reservations" as const} : item),
             ...(superAdmin
               ? [{ name: "Members" as const, icon: Users }, { name: "Label requests" as const, icon: Truck }]
               : []),
           ].map(({ name, icon: Icon }) => (
             <button
               key={name}
+              aria-label={name}
               className={tab === name ? "nav-item active" : "nav-item"}
               onClick={() => {
                 setTab(name);
+                setReservationSearch("");
                 setError("");
               }}
             >
               <Icon size={19} />
               {name}
+              {name === "Members" && members.some(m=>!m.active) && <span className="nav-count">{members.filter(m=>!m.active).length}</span>}
+              {name === "Label requests" && state.reservations.some(r=>r.labelRequest?.status==='requested') && <span className="nav-count">{state.reservations.filter(r=>r.labelRequest?.status==='requested').length}</span>}
               {name === "Deals" && (
                 <span className="nav-count">{openDeals.length}</span>
               )}
             </button>
           ))}
+          {live && !postingOnly && <a className="nav-item" href="/profile"><Users size={19} />My profile</a>}
         </nav>
         <div className="sidebar-bottom">
           <div className="group-note">
@@ -959,7 +979,7 @@ export default function Dashboard({
                           <a href={d.url} target="_blank" rel="noreferrer">
                             Retailer <ExternalLink size={13} />
                           </a>
-                          {!postingOnly && <button
+                          {!canPostDeals && <button
                             disabled={busy || !loaded || !available}
                             className="reserve-button"
                             onClick={() => {
@@ -991,21 +1011,21 @@ export default function Dashboard({
             <>
               <section className="section-heading lower">
                 <div>
-                  <h2>Your reservations</h2>
-                  <p>A clear picture of what’s in motion.</p>
+                  <h2>{superAdmin ? "Reservations by deal" : "Your reservations"}</h2>
+                  <p>{superAdmin ? "Group totals with a member-by-member breakdown for each deal." : "A clear picture of what’s in motion."}</p>
                 </div>
                 <button
                   className="text-button"
-                  onClick={() => setTab("My reservations")}
+                  onClick={() => setTab(superAdmin ? "Reservations" : "My reservations")}
                 >
                   View reservations <ArrowRight size={16} />
                 </button>
               </section>
-              {reservations}
+              {superAdmin ? groupReservations : reservations}
             </>
           ) : (
             tab !== "Deals" &&
-            tab !== "Members" && tab !== "Label requests" && (
+            tab !== "Members" && tab !== "Label requests" && tab !== "Reservations" && (
               <>
                 <section className="section-heading">
                   <div>
@@ -1025,10 +1045,12 @@ export default function Dashboard({
                     </p>
                   </div>
                 </section>
+                {superAdmin && <label>Search group reservations<input value={reservationSearch} onChange={e=>setReservationSearch(e.target.value)} placeholder="Deal, member name, email, or reference" /></label>}
                 {reservations}
               </>
             )
           )}
+          {tab === "Reservations" && superAdmin && <section><h2>Reservations by deal</h2><p className="live-note">Select a deal to see who reserved units, delivery details, and payment status.</p><label>Search reservations by deal or member<input value={reservationSearch} onChange={e=>setReservationSearch(e.target.value)} /></label>{groupReservations}</section>}
           {tab === "Members" && superAdmin && live && (
             <section className="members-section">
               <h2>Group members</h2>
@@ -1040,20 +1062,21 @@ export default function Dashboard({
                 each regular member’s own records. Only super admins can approve
                 membership or change roles; role changes do not activate an account.
               </p>
+              <div className="form-row"><label>Search members<input value={memberSearch} onChange={e=>setMemberSearch(e.target.value)} placeholder="Name or email" /></label><label>Membership status<select aria-label="Membership status" value={memberStatus} onChange={e=>setMemberStatus(e.target.value)}><option value="all">All members</option><option value="pending">Awaiting approval</option><option value="active">Active</option></select></label></div>
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Email</th>
+                      <th>Member</th>
                       <th>Role</th>
                       <th>Status</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {members.map((m) => (
+                    {members.filter(m=>`${m.full_name || ""} ${m.email}`.toLowerCase().includes(memberSearch.toLowerCase()) && (memberStatus==='all' || (memberStatus==='pending' ? !m.active : m.active))).sort((a,b)=>Number(a.active)-Number(b.active)||(a.full_name||a.email).localeCompare(b.full_name||b.email)).map((m) => (
                       <tr key={m.id}>
-                        <td>{m.email}</td>
+                        <td><a className="member-profile-link" href={`/profile?member=${m.id}`}><strong>{m.full_name || "Name not provided"}</strong><small>{m.email}</small></a></td>
                         <td>
                           {m.role === "super_admin" ? "Super admin (protected)" : (
                             <select
@@ -1176,6 +1199,13 @@ export default function Dashboard({
           </form>
         </Modal>
       )}
+      {selectedReservationDeal && superAdmin && <Modal wide title={`Reservations · ${selectedReservationDeal.title}`} close={()=>setSelectedReservationDeal(null)}>
+        <p className="form-help">{state.reservations.filter(r=>r.dealId===selectedReservationDeal.id).reduce((n,r)=>n+r.quantity,0)} units reserved of {selectedReservationDeal.capacity} capacity.</p>
+        <div className="table-wrap"><table><thead><tr><th>Member</th><th>Reserved</th><th>Received</th><th>Paid units</th><th>Awaiting payout</th><th>Delivery</th></tr></thead><tbody>
+          {state.reservations.filter(r=>r.dealId===selectedReservationDeal.id).map(r=><tr key={r.id}><td><a className="member-profile-link" href={`/profile?member=${r.memberId}`}><strong>{members.find(m=>m.id===r.memberId)?.full_name || "Name not provided"}</strong><small>{r.memberEmail}</small></a></td><td>{r.quantity}</td><td>{r.received}</td><td>{r.paid}</td><td>{money((r.received-r.paid)*(r.base+r.commission))}</td><td>{r.submitted ? <>{r.method}<small>{r.reference}</small>{r.submissions?.map(s=><details className="submission-details" key={s.id}><summary>UPC {s.upc} · {s.quantity} units</summary><small>Payment name: {s.payment_name}<br />Destination: {s.destination}<br />{s.reference}{s.amazon_otp && <><br />Amazon delivery OTP: {s.amazon_otp}</>}</small></details>)}</> : "Awaiting details"}</td></tr>)}
+        </tbody></table></div>
+        <div className="management-actions"><button className="primary" onClick={()=>{setReservationSearch(selectedReservationDeal.title);setTab('Deliveries');setSelectedReservationDeal(null);}}>Manage deliveries</button><button className="primary" onClick={()=>{setReservationSearch(selectedReservationDeal.title);setTab('Payouts');setSelectedReservationDeal(null);}}>Manage payouts</button></div>
+      </Modal>}
       {delivery && (
         <Modal title="Delivery details" close={() => setDelivery(null)}>
           <DeliveryForm key={editingSubmission?.id || "new"} reservation={delivery} submission={editingSubmission} deal={state.deals.find(d=>d.id===delivery.dealId)!} email={delivery.memberEmail || account?.email || "demo@example.test"} busy={busy} error={error} onSubmit={submitDelivery} />

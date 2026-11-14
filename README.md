@@ -20,6 +20,8 @@ For a production build, run `npm run build` then `npm start`. Use `npm run typec
 - [Google sign-in](docs/google-sign-in.md) on both auth screens, using the same administrator approval rules. Google provider credentials are configured only in Supabase.
 - [Three member roles](docs/member-roles.md): protected Mobius super admin, posting-only Admin, and regular Member. Only the super admin can approve memberships or assign roles.
 - [Approval alerts](docs/approval-alerts.md) email the owner after a new account verifies its email, with a private retry queue and a scheduled Supabase worker.
+- [Member profiles](docs/member-profiles.md) collect contact and payout information for US bank transfer, Zelle, or Taekus Pay. The super admin can view profiles and receives payment-change alerts without financial details in email.
+- Super-admin reservations are grouped by deal, with member breakdowns, delivery/payment shortcuts, member search, and pending-approval filters. Only Members reserve units.
 
 - Admin preview: post deals with product links, deadlines, quantities, delivery instructions, base payouts, and optional commissions.
 - Member preview: browse/search deals and reserve available quantities.

@@ -105,7 +105,7 @@ export default function Workspace({ signup = false }: { signup?: boolean }) {
     async function refresh() {
       const { data, error } = await client!
         .from("profiles")
-        .select("id,email,role,active")
+        .select("id,email,role,active,full_name")
         .eq("id", session!.user.id)
         .single();
       if (cancelled) return;
@@ -299,6 +299,7 @@ export default function Workspace({ signup = false }: { signup?: boolean }) {
               administrator approval. Deals and reservations become available
               after your membership is approved. This page checks automatically.
             </p>
+            <p><Link className="auth-link" href="/profile">Complete my profile and payment information</Link></p>
             <button
               className="primary full"
               onClick={() => setRetry((n) => n + 1)}
