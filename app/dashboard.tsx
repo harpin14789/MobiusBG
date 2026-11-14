@@ -956,9 +956,9 @@ export default function Dashboard({
             <section className="members-section">
               <h2>Group members</h2>
               <p>
-                Invite people from Supabase Authentication → Users, then
-                activate their membership here. New accounts have no group
-                access until approved.
+                New members create an account at /join and confirm their email.
+                Approve their membership here when you’re ready to give them
+                access. You can deactivate membership at any time.
               </p>
               <div className="table-wrap">
                 <table>
@@ -990,7 +990,7 @@ export default function Dashboard({
                                 )
                               }
                             >
-                              {m.active ? "Deactivate" : "Activate"}
+                              {m.active ? "Deactivate" : "Approve membership"}
                             </button>
                           )}
                         </td>

@@ -6,8 +6,8 @@ Mobius supports an authenticated Supabase workspace and a separately enabled bro
 
 1. Create a Supabase project named **MobiusBG** in your organization. The management API can also do this when a `SUPABASE_ACCESS_TOKEN` binding for `api.supabase.com` is available in the cloud environment. That token is for provisioning only; the app does not read it.
 2. Apply `supabase/migrations/20261113000100_buying_group.sql` using the project's SQL editor. It is a one-time transactional migration; do not reapply it after success. Alternatively, link the Supabase CLI to the project and run `supabase db push`.
-3. Under Authentication settings, turn off public sign-ups and anonymous sign-ins. Configure the Site URL and allowed redirect URLs to the actual application origin. Invitations and recovery links redirect to the root URL, where the app handles the Supabase session and password setup.
-4. Configure production SMTP before inviting the group. Supabase's default email delivery is restricted and is not suitable for sending invitations to arbitrary members. SMTP credentials belong in Supabase's dashboard, not the app.
+3. Under Authentication settings, keep anonymous sign-ins off and email confirmation on. Enable public email sign-ups **after configuring and verifying SMTP**. Set a minimum password length of 12. Configure the Site URL and allowed redirect URLs to the actual application origin. Confirmation, invitation, and recovery links redirect to the root URL, which forwards authentication callbacks to `/workspace`.
+4. Configure SMTP before enabling signup for the group. Supabase's default email delivery is restricted and is not suitable for confirming arbitrary members. SMTP credentials belong in Supabase's dashboard, not the app. See [Email delivery](email-delivery.md) for a Gmail starting option and a dedicated-provider alternative.
 5. Set the app's environment variables (in cloud environment settings or an ignored `.env.local`):
 
    ```dotenv
@@ -30,7 +30,7 @@ Mobius supports an authenticated Supabase workspace and a separately enabled bro
 - Node.js 24 diagnostic scripts need `NODE_USE_ENV_PROXY=1` to use the supplied proxy. With it, the installed Supabase JavaScript client reaches the hosted API and receives the expected anonymous-access denial. Direct Node requests fail in this environment. Preserve the supplied proxy and CA variables.
 - `npm run build` passes, and the production page displays the real-account sign-in form without the demo role switch. Headless Chromium using the supplied proxy cannot yet verify hosted API requests: it reports `net::ERR_CERT_AUTHORITY_INVALID` for Auth settings and PostgREST. The browser needs to trust the managed proxy's CA before browser authentication can be verified; TLS verification was not disabled.
 
-Remaining hosted setup: there are currently no member profiles or active administrators. Create the intended first account and promote it using the instructions below. Public sign-ups and anonymous sign-ins are already disabled. Auth's Site URL is still `http://localhost:3000`, its additional redirect allowlist is empty, and custom SMTP is not configured. Set the actual deployment origin and SMTP before sending production invitations. Hosted sign-in and member workflows have not been exercised because no account credentials are configured; the integration suite is intentionally restricted to the local stack.
+Deployment update (November 14, 2026): the app is deployed at `https://mobiusbg.netlify.app`. Supabase's Site URL and redirect allowlist use that origin, and the first administrator account exists. The app supports email signup at `/join`, followed by email confirmation and administrator approval. Hosted public signup remains disabled until SMTP is configured and tested; anonymous sign-ins remain disabled and email confirmation remains required. The current hosted email limit is 2 per hour and must be reviewed when custom SMTP is configured. Production email delivery has not been verified; the integration suite is intentionally restricted to the local stack.
 
 ## First administrator
 
@@ -44,7 +44,7 @@ where id = (select id from auth.users where email = 'YOUR_EMAIL_HERE');
 
 Check that exactly one intended profile was updated. Administrator status is never taken from user-supplied metadata, a browser role switch, or the first sign-up.
 
-Invite members using Supabase Authentication → Users. New accounts start inactive. In the app's **Members** tab, activate each intended member; members can then sign in and access the group. Deactivation revokes database access even for already signed-in users. Changes to administrator roles remain a trusted SQL-editor operation.
+Members register at `/join` using email and a password of at least 12 characters. After verifying their email, they see **Awaiting group approval**. New accounts always start as inactive members, regardless of user-supplied metadata. In the app's **Members** tab, click **Approve membership** for each intended member. Their waiting screen refreshes automatically or they can click **Check membership**. Approval and email confirmation are independent requirements: approving a profile does not bypass Auth email verification. Deactivation revokes database access even for already signed-in users. Administrators may still invite accounts through Supabase Authentication → Users. Changes to administrator roles remain a trusted SQL-editor operation.
 
 ## Security and data behavior
 
@@ -69,7 +69,7 @@ npx supabase status -o json > supabase/.temp/local-status.json
 npm run test:supabase
 ```
 
-The integration runner refuses non-loopback Supabase URLs. It creates isolated test accounts and deals only in the local stack and tests the real Auth/PostgREST/database flow, row-level access, metadata impersonation, concurrent capacity, idempotency, payout snapshots, partial receipt/payment limits, account deactivation, and browser sign-in/sign-out. The local service-role key is only read by test tooling and never exposed to the app. Test data remains in the local development database; `supabase db reset` removes **all local data** if you choose to reset it.
+The integration runner refuses non-loopback Supabase URLs. It creates isolated test accounts and deals only in the local stack and tests the real Auth/PostgREST/database flow, row-level access, metadata impersonation, concurrent capacity, idempotency, payout snapshots, partial receipt/payment limits, account deactivation, and browser sign-in/sign-out. It also exercises signup, the real confirmation email captured by local Mailpit on port 54324, pre-confirmation login denial, pending-member access denial, administrator approval through the browser, and signup failure messaging. The local service-role key is only read by test tooling and never exposed to the app. Test data remains in the local development database; `supabase db reset` removes **all local data** if you choose to reset it.
 
 The regular `npm test` suite runs the explicitly enabled demo on port 3100. Supabase tests use port 3101. Run browser suites and builds sequentially; development processes must not write `.next` concurrently.
 

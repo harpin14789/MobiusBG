@@ -16,6 +16,7 @@ For a production build, run `npm run build` then `npm start`. Use `npm run typec
 ## Current functionality
 
 - Public landing page at `/` with membership inquiries, FAQs, and member sign-in at `/workspace`. Existing root invitation and recovery callbacks are forwarded with their authentication parameters preserved. Explicit local demo mode retains its dashboard at `/`.
+- Email signup at `/join`, email confirmation, and administrator approval in **Members**. Accounts cannot grant themselves access. Production signup requires configured [email delivery](docs/email-delivery.md); SMTP credentials are stored only in Supabase.
 
 - Admin preview: post deals with product links, deadlines, quantities, delivery instructions, base payouts, and optional commissions.
 - Member preview: browse/search deals and reserve available quantities.

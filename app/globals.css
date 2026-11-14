@@ -41,6 +41,11 @@
 .auth-reset {
   margin: 18px auto 0;
 }
+.auth-link {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .live-note {
   font-size: 11px;
   color: var(--muted);

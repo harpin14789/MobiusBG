@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { Infinity as InfinityIcon } from "lucide-react";
+import Link from "next/link";
 import Dashboard from "./dashboard";
 import { demoMode, getSupabase, type Profile } from "../lib/supabase";
 
-export default function Workspace() {
+export default function Workspace({ signup = false }: { signup?: boolean }) {
   const [client, setClient] = useState<SupabaseClient | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -17,6 +18,18 @@ export default function Workspace() {
   const [pending, setPending] = useState(false);
   const [passwordSetup, setPasswordSetup] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [confirmationEmail, setConfirmationEmail] = useState("");
+
+  function authError(error: unknown) {
+    const code = (error as { code?: string })?.code;
+    if (code === "signup_disabled")
+      return "New accounts are not available yet. Please contact themobiusenterprises@gmail.com for help joining.";
+    if (code === "email_address_not_authorized" || code === "unexpected_failure")
+      return "We could not send your confirmation email. Please contact themobiusenterprises@gmail.com for help.";
+    if (code === "over_email_send_rate_limit" || code === "over_request_rate_limit")
+      return "Too many attempts. Please wait a few minutes before trying again.";
+    return error instanceof Error ? error.message : "Please try again.";
+  }
 
   useEffect(() => {
     if (demoMode) {
@@ -127,6 +140,17 @@ export default function Workspace() {
         if (error) throw error;
         setPasswordSetup(false);
         setMessage("Password saved.");
+      } else if (signup) {
+        const email = String(form.get("email")).trim();
+        const { data, error } = await client.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: window.location.origin },
+        });
+        if (error) throw error;
+        // A session is only returned when email confirmation is disabled.
+        // The inactive profile still prevents workspace access in that case.
+        if (!data.session) setConfirmationEmail(email);
       } else {
         const { error } = await client.auth.signInWithPassword({
           email: String(form.get("email")),
@@ -135,9 +159,27 @@ export default function Workspace() {
         if (error) throw error;
       }
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Could not sign in. Please try again.",
-      );
+      setError(authError(e));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function resendConfirmation() {
+    if (!client || pending || !confirmationEmail) return;
+    setPending(true);
+    setError("");
+    setMessage("");
+    try {
+      const { error } = await client.auth.resend({
+        type: "signup",
+        email: confirmationEmail,
+        options: { emailRedirectTo: window.location.origin },
+      });
+      if (error) throw error;
+      setMessage("If this address is awaiting confirmation, a new link is on its way. Check your spam folder too.");
+    } catch (e) {
+      setError(authError(e));
     } finally {
       setPending(false);
     }
@@ -225,8 +267,9 @@ export default function Workspace() {
           <>
             <h1>Awaiting group approval</h1>
             <p>
-              You’re signed in as {session.user.email}. Ask your group
-              administrator to activate your membership.
+              You’re signed in as {session.user.email}. Your account is awaiting
+              administrator approval. Deals and reservations become available
+              after your membership is approved. This page checks automatically.
             </p>
             <button
               className="primary full"
@@ -238,17 +281,37 @@ export default function Workspace() {
               Sign out
             </button>
           </>
+        ) : confirmationEmail && !session && !passwordSetup ? (
+          <>
+            <h1>Check your email</h1>
+            <p>
+              If {confirmationEmail} can be registered, you’ll receive a
+              confirmation link. Open it to verify your email, then wait for
+              administrator approval. Check your spam folder too.
+            </p>
+            <button className="primary full" disabled={pending} onClick={resendConfirmation}>
+              {pending ? "Please wait…" : "Resend confirmation email"}
+            </button>
+            <p>Already have an account? <Link className="auth-link" href="/workspace">Sign in</Link></p>
+            <button className="text-button" disabled={pending} onClick={() => {
+              setConfirmationEmail(""); setError(""); setMessage("");
+            }}>Use a different email</button>
+          </>
         ) : (
           <>
             <h1>
               {passwordSetup
                 ? "Set your password"
+                : signup
+                  ? "Join Mobius"
                 : "Welcome to your buying group"}
             </h1>
             <p>
               {passwordSetup
                 ? "Choose a password for your Mobius account."
-                : "Sign in with the email address your group admin invited."}
+                : signup
+                  ? "Create your account, confirm your email, and wait for administrator approval before accessing the group."
+                  : "Sign in with your Mobius email and password."}
             </p>
             <form onSubmit={authenticate}>
               {!passwordSetup && (
@@ -267,22 +330,26 @@ export default function Workspace() {
                 <input
                   type="password"
                   name="password"
-                  minLength={passwordSetup ? 12 : undefined}
+                  minLength={passwordSetup || signup ? 12 : undefined}
                   maxLength={256}
                   autoComplete={
-                    passwordSetup ? "new-password" : "current-password"
+                    passwordSetup || signup ? "new-password" : "current-password"
                   }
+                  aria-describedby={passwordSetup || signup ? "password-help" : undefined}
                   required
                 />
               </label>
+              {(signup || passwordSetup) && <p id="password-help">Use at least 12 characters.</p>}
               <button disabled={pending} className="primary full">
                 {pending
                   ? "Please wait…"
                   : passwordSetup
                     ? "Save password"
+                    : signup
+                      ? "Create account"
                     : "Sign in"}
               </button>
-              {!passwordSetup && (
+              {!passwordSetup && !signup && (
                 <button
                   type="button"
                   className="text-button auth-reset"
@@ -293,6 +360,13 @@ export default function Workspace() {
                 </button>
               )}
             </form>
+            {!passwordSetup && (
+              <p>{signup ? "Already a member? " : "New to Mobius? "}
+                <Link className="auth-link" href={signup ? "/workspace" : "/join"}>
+                  {signup ? "Sign in" : "Create an account"}
+                </Link>
+              </p>
+            )}
           </>
         )}
         {error && (
@@ -305,6 +379,7 @@ export default function Workspace() {
             {message}
           </p>
         )}
+        <p><Link className="auth-link" href="/">← Back to Mobius</Link></p>
       </div>
     </main>
   );

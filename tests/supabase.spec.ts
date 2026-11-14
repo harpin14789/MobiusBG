@@ -107,6 +107,76 @@ test('pending members cannot enter the workspace through the browser',async({pag
   await expect(page.getByRole('button',{name:'Switch to admin'})).toHaveCount(0);
 });
 
+test('email signup requires confirmation and administrator approval before group access',async({page,browser,request})=>{
+  const mailbox=`signup-${run}`;
+  const email=`${mailbox}@example.test`;
+  await page.goto('/join');
+  await page.getByLabel('Email',{exact:true}).fill(email);
+  await page.getByLabel('Password',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Create account',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Check your email'})).toBeVisible();
+  const unconfirmed=await publicClient().auth.signInWithPassword({email,password});
+  expect(unconfirmed.error?.code).toBe('email_not_confirmed');
+  const profile=await service.from('profiles').select('id,role,active').eq('email',email).single();
+  expect(profile.error).toBeNull();
+  expect(profile.data).toMatchObject({role:'member',active:false});
+
+  // Inspect only the local test inbox. Exercise the actual confirmation email
+  // rather than bypassing email verification through the administrative API.
+  let messages:Array<{ID:string}>=[];
+  await expect.poll(async()=>{
+    const response=await request.get(`http://127.0.0.1:54324/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`);
+    expect(response.ok()).toBe(true);
+    messages=(await response.json()).messages;return messages.length;
+  }).toBeGreaterThan(0);
+  const messageResponse=await request.get(`http://127.0.0.1:54324/api/v1/message/${messages[0].ID}`);
+  expect(messageResponse.ok()).toBe(true);
+  const message=await messageResponse.json();
+  const body=message.HTML||message.Text;
+  const link=body.match(/https?:\/\/[^"'<>\s]+\/auth\/v1\/verify\?[^"'<>\s]+/)?.[0]?.replaceAll('&amp;','&');
+  expect(link).toBeTruthy();
+  expect(new URL(link!).hostname).toBe('127.0.0.1');
+  await page.goto(link!);
+  await expect(page.getByRole('heading',{name:'Awaiting group approval'})).toBeVisible();
+  await expect(page.getByLabel('Search deals')).toHaveCount(0);
+  const account=publicClient();
+  expect((await account.auth.signInWithPassword({email,password})).error).toBeNull();
+  expect((await account.from('deals').select('*')).data).toEqual([]);
+  expect((await account.rpc('set_member_active',{p_id:profile.data!.id,p_active:true})).error).not.toBeNull();
+
+  const context=await browser.newContext(),adminPage=await context.newPage();
+  try {
+    await adminPage.goto('/workspace');
+    await adminPage.getByLabel('Email',{exact:true}).fill(emails.admin);
+    await adminPage.getByLabel('Password',{exact:true}).fill(password);
+    await adminPage.getByRole('button',{name:'Sign in',exact:true}).click();
+    await adminPage.getByRole('button',{name:'Members',exact:true}).click();
+    const row=adminPage.locator('tbody tr').filter({hasText:email});
+    await expect(row).toContainText('Awaiting approval');
+    await row.getByRole('button',{name:'Approve membership',exact:true}).click();
+    await expect(row).toContainText('Active');
+    await page.getByRole('button',{name:'Check membership',exact:true}).click();
+    await expect(page.getByLabel('Search deals')).toBeVisible();
+    expect((await account.from('deals').select('id')).data!.length).toBeGreaterThan(0);
+    await row.getByRole('button',{name:'Deactivate',exact:true}).click();
+    await expect(row).toContainText('Awaiting approval');
+    expect((await account.from('deals').select('*')).data).toEqual([]);
+  } finally {await context.close();}
+});
+
+test('disabled signup shows an error instead of a false confirmation',async({page})=>{
+  await page.route('**/auth/v1/signup**',route=>route.fulfill({
+    status:422,contentType:'application/json',
+    body:JSON.stringify({error_code:'signup_disabled',msg:'Signups not allowed for this instance'}),
+  }));
+  await page.goto('/join');
+  await page.getByLabel('Email',{exact:true}).fill(`disabled-${run}@example.test`);
+  await page.getByLabel('Password',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Create account',exact:true}).click();
+  await expect(page.locator('.auth-card [role=alert]')).toContainText('New accounts are not available yet');
+  await expect(page.getByRole('heading',{name:'Check your email'})).toHaveCount(0);
+});
+
 test('invitation links let a new member set their password without granting membership',async({page})=>{
   const email=`invited-${run}@example.test`;
   const generated=await service.auth.admin.generateLink({type:'invite',email});
