@@ -4,14 +4,14 @@ These are requirements supplied by the co-founder for a future replacement of th
 
 ## Deal setup and commitments
 
-- A deal can allow warehouse drop-off, labels for tax-exempt members, or dropshipping to a tax-free warehouse address. A deal may offer multiple methods; the deal poster chooses which are allowed. Confirm how tax-exempt eligibility is established.
-- The deal poster sets a separate customizable commitment cap for each combination of region (West, Central, or East) and fulfillment method (dropship, warehouse drop-off, or label needed). Use the member's saved profile region to determine the applicable cap. Define how a later profile-region change affects existing reservations.
+- A deal can allow warehouse drop-off, labels for tax-exempt members, or dropshipping to a tax-free warehouse address. A deal may offer multiple methods; the deal poster chooses which are allowed. Label eligibility is set on each deal, along with the minimum quantity needed for a label; no separate member eligibility flag was requested.
+- The deal poster sets a separate customizable commitment cap for each combination of region (West, Central, or East) and fulfillment method (dropship, warehouse drop-off, or label needed). Use the member's saved profile region to determine the applicable cap. Existing reservations retain their original region if the member later changes their profile region; future reservations use the updated region.
 - Enforce the agreed caps and availability in database transactions, including edits and simultaneous reservations; do not rely only on browser checks.
 
 ## Delivery and receipt
 
 - Members submit tracking numbers for dropship orders.
-- The super admin uploads labels they have generated for members, and members receive the labels by email. Define supported file types, secure storage, access, and how to recover if an email fails.
+- The super admin uploads labels they have generated for members, and members receive the labels by email. Email a secure download link; define supported file types, secure storage, link lifetime, access, and how to recover if an email fails.
 - Members dropping off at Blue Ocean submit the drop-off code shown on their receipt.
 - A submitted delivery prompts the super admin to verify receipt, manually or via a future Blue Ocean API integration. API availability, credentials, identifiers, event semantics, and documentation have not been confirmed. A received quantity becomes pending payment; partial receipts and duplicate notifications must be handled safely.
 
@@ -30,9 +30,9 @@ Existing deal and delivery flows, label requests, manual receipt and payment rec
 
 This sequence is a proposal, not an implementation. The owner's answers and any necessary external integration details determine the final design.
 
-1. **Deal options and commitments.** Allow deal posters to configure permitted fulfillment methods and a separate cap for each West/Central/East and method combination. Members choose an allowed method when reserving; the applicable region comes from their saved profile. Protect each cap against simultaneous reservations and edits, preserve existing reservations when migrating, and show available capacity clearly. Decide how region changes affect existing reservations and how tax-exempt eligibility is verified before building.
+1. **Deal options and commitments.** Allow deal posters to configure permitted fulfillment methods and a separate cap for each West/Central/East and method combination. Members choose an allowed method when reserving; the applicable region comes from their saved profile. Protect each cap against simultaneous reservations and edits, preserve existing reservations when migrating, and show available capacity clearly. Keep each existing reservation in its original region after profile changes; use deal-level label availability and minimum quantity to determine label eligibility.
 2. **Delivery submissions.** Guide members through the selected method: dropship tracking, a Blue Ocean drop-off receipt code, or a label request. Keep reservation, submitted delivery, and actual receipt distinct. Support partial deliveries and ensure submissions do not exceed committed quantities. Confirm whether existing submissions need conversion and how addresses are presented.
-3. **Uploaded shipping labels.** Let the super admin attach an externally generated label to the appropriate member request, with private access and a reliable notification. Define accepted file types, storage and retention, email attachment versus secure download, and how to resend or replace a label. This does not create labels or purchase postage.
+3. **Uploaded shipping labels.** Let the super admin attach an externally generated label to the appropriate member request, with private access and a reliable notification. Use a secure link rather than an email attachment; define accepted file types, storage, retention, link lifetime, and how to resend or replace a label. This does not create labels or purchase postage.
 4. **Receipt verification.** Provide a manual super-admin receipt workflow that records the quantity and evidence and moves received, unpaid units into pending payment. Explore Blue Ocean automation only after obtaining its API documentation, access and matching rules; handle duplicate events, partial receipt and failures. Keep manual review available.
 5. **Pending payment and payout list.** Let the super admin adjust pending payout amounts with a reason and an audit trail without changing amounts already paid. Support per-unit and separate dollar adjustments, and handle partially paid reservations explicitly. Show/export member, item, quantity, saved payout, adjustments and amount due. Confirm the desired export format and who can access it.
 6. **Later: invoice and ACH.** Revisit invoice requirements after the preceding flows work. Treat a US Bank ACH batch file as a separate future project requiring the bank's current specifications, secure handling and explicit review before use; no funds should be initiated by the app without a separately agreed workflow.
@@ -47,9 +47,7 @@ This sequence is a proposal, not an implementation. The owner's answers and any 
 
 ## Open decisions
 
-- How should a profile-region change affect existing reservations and their caps?
-- How is tax-exempt eligibility checked for label requests?
 - How should per-unit and separate-dollar adjustments apply to partial receipts and payments, and how should members be informed?
 - What is Blue Ocean's API documentation and what identifies a drop-off or receipt? Manual verification can proceed without the API.
-- Should label emails contain an attachment or a secure link, and what file formats and retention are required?
+- What label file formats, secure-link lifetime and retention are required?
 - What format should the pending-payment list use? Invoice details and ACH export are deferred.

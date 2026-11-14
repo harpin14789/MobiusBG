@@ -47,3 +47,5 @@ This history summarizes work represented in the repository; it does not claim th
 - Added a proposed staged implementation plan, acceptance checks, and unresolved workflow decisions for the future fulfillment and payout work.
 
 - Recorded planning decisions: use the member’s saved profile region, allow multiple delivery methods per deal, and support both per-unit and separate-dollar pending payout adjustments.
+
+- Recorded planning decisions to retain reservation regions, determine label eligibility from deal settings and minimum quantity, and email secure label download links.
