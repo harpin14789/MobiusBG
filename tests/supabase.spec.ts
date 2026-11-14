@@ -74,6 +74,26 @@ test('simultaneous reservations cannot overbook, and request retries are idempot
   expect((await reserve(member,retryDeal,2,request)).error).not.toBeNull();
 });
 
+test('posting admins manage multiple retailers while deletion preserves reservations and payouts',async()=>{
+  const poster=await user(`editor-${run}@example.test`,'admin',true);
+  const id=randomUUID(),retailers=[{name:'Shop A',url:'https://example.com/a'},{name:'Shop B',url:'https://example.com/b'}];
+  const base={p_id:id,p_title:'Multi retailer deal',p_category:'Laptops',p_retailer:'Shop A',p_url:'https://example.com/a',p_base:10000,p_commission:1000,p_capacity:5,p_deadline:'2099-12-31',p_instructions:'Ship sealed',p_label_min_quantity:null,p_retailers:retailers};
+  expect((await poster.client.rpc('create_deal_with_retailers',base)).error).toBeNull();
+  expect((await member.from('deals').select('retailers').eq('id',id).single()).data?.retailers).toEqual(retailers);
+  const reserved=await reserve(member,id,2);expect(reserved.error).toBeNull();
+  const edit={p_id:id,p_title:'Updated multi retailer deal',p_category:'Laptops',p_base:20000,p_commission:2000,p_capacity:5,p_deadline:'2099-12-31',p_instructions:'Updated',p_label_min_quantity:null,p_retailers:retailers};
+  expect((await member.rpc('update_deal',edit)).error).not.toBeNull();
+  expect((await poster.client.rpc('update_deal',{...edit,p_capacity:1})).error).not.toBeNull();
+  expect((await poster.client.rpc('update_deal',{...edit,p_retailers:[{name:'Invalid',url:'javascript:alert(1)'}]})).error).not.toBeNull();
+  expect((await poster.client.rpc('update_deal',edit)).error).toBeNull();
+  expect((await member.from('reservations').select('base,commission').eq('id',reserved.data).single()).data).toEqual({base:10000,commission:1000});
+  expect((await member.rpc('delete_deal',{p_id:id})).error).not.toBeNull();
+  expect((await poster.client.rpc('delete_deal',{p_id:id})).error).toBeNull();
+  expect((await member.from('deals').select('archived').eq('id',id).single()).data?.archived).toBe(true);
+  expect((await member.from('reservations').select('id').eq('id',reserved.data)).data).toHaveLength(1);
+  expect((await reserve(other,id)).error).not.toBeNull();
+});
+
 test('payout snapshots and partial receipt/payment limits survive direct API calls',async()=>{
   const id=await deal();
   const reserved=await reserve(member,id,2);expect(reserved.error).toBeNull();const r=reserved.data;

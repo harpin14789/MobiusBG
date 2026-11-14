@@ -102,3 +102,27 @@ test("mobile layout fits viewport and navigation works", async ({ page }) => {
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.screenshot({ path: "/tmp/mobius-mobile.png", fullPage: true });
 });
+
+test("deal posters can add retailers, edit a deal, and delete it while preserving reservations", async ({page}) => {
+  await page.goto('/');
+  await page.getByRole('button',{name:'Reserve units'}).first().click();
+  await page.getByRole('button',{name:'Confirm reservation'}).click();
+  await page.getByRole('button',{name:'Switch to admin'}).click();
+  await page.getByRole('button',{name:'Deals',exact:true}).click();
+  const card=page.locator('article').filter({hasText:'Meta Quest 3S'});
+  await card.getByRole('button',{name:'Edit deal'}).click();
+  const modal=page.getByRole('dialog',{name:'Edit deal'});
+  await modal.getByRole('button',{name:'Add another retailer'}).click();
+  await modal.getByLabel('Retailer 2',{exact:true}).fill('Second Shop');
+  await modal.getByLabel('Retailer 2 URL',{exact:true}).fill('https://example.com/product');
+  await modal.getByLabel('Product name').fill('Updated Quest');
+  await modal.getByRole('button',{name:'Save changes'}).click();
+  const updated=page.locator('article').filter({hasText:'Updated Quest'});
+  await expect(updated.getByRole('link',{name:'Second Shop'})).toHaveAttribute('href','https://example.com/product');
+  page.once('dialog',dialog=>dialog.accept());
+  await updated.getByRole('button',{name:'Delete deal'}).click();
+  await expect(updated).toHaveCount(0);
+  await page.getByRole('button',{name:'Switch to member'}).click();
+  await page.getByRole('button',{name:'My reservations',exact:true}).click();
+  await expect(page.locator('tbody tr')).toContainText('Updated Quest');
+});

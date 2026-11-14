@@ -126,6 +126,8 @@ export default function Dashboard({
   const [labelReservation, setLabelReservation] = useState<Reservation | null>(null);
   const [labelsOffered, setLabelsOffered] = useState(false);
   const [create, setCreate] = useState(false);
+  const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
+  const [extraRetailers, setExtraRetailers] = useState<{name:string;url:string}[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState("");
   const [selectedReservationDeal, setSelectedReservationDeal] = useState<Deal | null>(null);
@@ -237,11 +239,11 @@ export default function Dashboard({
     0,
   );
   const openDeals = state.deals.filter(
-    (d) => remaining(state, d) > 0 && d.deadline >= today(),
+    (d) => !d.archived && remaining(state, d) > 0 && d.deadline >= today(),
   );
   const visibleDeals = state.deals.filter(
-    (d) =>
-      `${d.title} ${d.retailer}`.toLowerCase().includes(search.toLowerCase()) &&
+    (d) => !d.archived &&
+      `${d.title} ${d.retailer} ${(d.retailers || []).map(r=>r.name).join(" ")}`.toLowerCase().includes(search.toLowerCase()) &&
       (filter === "All deals" || d.category === filter),
   );
 
@@ -330,7 +332,7 @@ export default function Dashboard({
       return;
     }
     const deal: Deal = {
-      id: crypto.randomUUID(),
+      id: editingDeal?.id || crypto.randomUUID(),
       title: String(form.get("title")).trim(),
       retailer: String(form.get("retailer")).trim(),
       category: String(form.get("category")),
@@ -341,14 +343,25 @@ export default function Dashboard({
       deadline: String(form.get("deadline")),
       instructions: String(form.get("instructions")).trim(),
       label_min_quantity: labelsOffered ? Number(form.get("label_min_quantity")) : null,
+      retailers: [{name:String(form.get("retailer")).trim(),url}, ...extraRetailers.map(r=>({name:r.name.trim(),url:r.url.trim()}))],
     };
+    if (deal.retailers!.some(r=>!r.name || !/^https?:\/\/[^ /]+/.test(r.url))) {
+      setError("Enter a name and valid http or https link for every retailer."); return;
+    }
+    if (editingDeal && capacity < (editingDeal.reserved ?? state.reservations.filter(r=>r.dealId===editingDeal.id).reduce((n,r)=>n+r.quantity,0))) {
+      setError("Capacity cannot be lower than reserved units."); return;
+    }
     const saved = client
-      ? await changeCloud(() => postDeal(client, deal))
-      : update((s) => ({ ...s, deals: [deal, ...s.deals] }));
+      ? await changeCloud(() => editingDeal ? rpc(client,"update_deal",{
+          p_id:deal.id,p_title:deal.title,p_category:deal.category,p_base:deal.base,p_commission:deal.commission,
+          p_capacity:deal.capacity,p_deadline:deal.deadline,p_instructions:deal.instructions,
+          p_label_min_quantity:deal.label_min_quantity,p_retailers:deal.retailers,
+        }) : postDeal(client, deal))
+      : update((s) => ({ ...s, deals: editingDeal ? s.deals.map(d=>d.id===deal.id?{...d,...deal}:d) : [deal, ...s.deals] }));
     if (saved) {
       setCreate(false);
       setTab("Deals");
-      setNotice(
+      setNotice(editingDeal ? "Deal updated. Existing reservations keep their original payout terms." :
         live
           ? "Deal posted. Members can now reserve units."
           : "Deal posted. Members can now reserve units in this demo.",
@@ -756,6 +769,8 @@ export default function Dashboard({
                 className="primary"
                 onClick={() => {
                   setCreate(true);
+                  setEditingDeal(null);
+                  setExtraRetailers([]);
                   setLabelsOffered(false);
                   setError("");
                 }}
@@ -976,9 +991,7 @@ export default function Dashboard({
                           />
                         </div>
                         <div className="card-footer">
-                          <a href={d.url} target="_blank" rel="noreferrer">
-                            Retailer <ExternalLink size={13} />
-                          </a>
+                          <div className="retailer-links">{(d.retailers?.length ? d.retailers : [{name:d.retailer,url:d.url}]).map((retailer,i)=><a key={i} href={retailer.url} target="_blank" rel="noreferrer">{retailer.name} <ExternalLink size={13} /></a>)}</div>
                           {!canPostDeals && <button
                             disabled={busy || !loaded || !available}
                             className="reserve-button"
@@ -993,6 +1006,7 @@ export default function Dashboard({
                             <ArrowRight size={15} />
                           </button>}
                         </div>
+                        {canPostDeals && <div className="deal-management"><button className="small-button" onClick={()=>{setEditingDeal(d);setExtraRetailers((d.retailers?.length ? d.retailers : [{name:d.retailer,url:d.url}]).slice(1));setLabelsOffered(!!d.label_min_quantity);setError("");setCreate(true);}}>Edit deal</button><button className="small-button" disabled={busy} onClick={()=>{if(!window.confirm(`Delete “${d.title}”? Existing reservations and payment records will be preserved.`))return;void (async()=>{const ok=client?await changeCloud(()=>rpc(client,'delete_deal',{p_id:d.id})):update(s=>({...s,deals:s.deals.map(deal=>deal.id===d.id?{...deal,archived:true}:deal)}));if(ok)setNotice('Deal deleted. Existing reservations remain available.');})();}}>Delete deal</button></div>}
                       </div>
                     </article>
                   );
@@ -1215,12 +1229,13 @@ export default function Dashboard({
         <LabelRequestForm reservation={labelReservation} request={labelReservation.labelRequest || null} deal={state.deals.find(d=>d.id===labelReservation.dealId)!} email={labelReservation.memberEmail || account?.email || "demo@example.test"} busy={busy} error={error} onSubmit={submitLabelRequest} />
       </Modal>}
       {create && (
-        <Modal title="Post a new deal" close={() => setCreate(false)}>
+        <Modal title={editingDeal ? "Edit deal" : "Post a new deal"} close={() => setCreate(false)}>
           <form onSubmit={createDeal}>
             <label>
               Product name
               <input
                 name="title"
+                defaultValue={editingDeal?.title}
                 placeholder="e.g. Meta Quest 3S 128GB"
                 maxLength={120}
                 required
@@ -1229,11 +1244,11 @@ export default function Dashboard({
             <div className="form-row">
               <label>
                 Retailer
-                <input name="retailer" maxLength={80} required />
+                <input name="retailer" maxLength={80} defaultValue={editingDeal?.retailers?.[0]?.name || editingDeal?.retailer} required />
               </label>
               <label>
                 Category
-                <select name="category">
+                <select name="category" defaultValue={editingDeal?.category}>
                   <option>Laptops</option>
                   <option>Graphics cards</option>
                   <option>VR & gaming</option>
@@ -1243,13 +1258,16 @@ export default function Dashboard({
             </div>
             <label>
               Product URL
-              <input name="url" type="url" placeholder="https://" required />
+              <input name="url" type="url" placeholder="https://" defaultValue={editingDeal?.retailers?.[0]?.url || editingDeal?.url} required />
             </label>
+            {extraRetailers.map((retailer,i)=><div key={i} className="extra-retailer"><label>Retailer {i+2}<input aria-label={`Retailer ${i+2}`} value={retailer.name} maxLength={80} onChange={e=>setExtraRetailers(items=>items.map((r,j)=>j===i?{...r,name:e.target.value}:r))} required /></label><label>Retailer {i+2} URL<input aria-label={`Retailer ${i+2} URL`} type="url" value={retailer.url} onChange={e=>setExtraRetailers(items=>items.map((r,j)=>j===i?{...r,url:e.target.value}:r))} required /></label><button type="button" className="text-button" onClick={()=>setExtraRetailers(items=>items.filter((_,j)=>j!==i))}>Remove retailer {i+2}</button></div>)}
+            <button type="button" className="small-button" disabled={extraRetailers.length>=19} onClick={()=>setExtraRetailers(items=>[...items,{name:'',url:''}])}>Add another retailer</button>
             <div className="form-row">
               <label>
                 Base payout ($)
                 <input
                   name="base"
+                  defaultValue={editingDeal ? editingDeal.base/100 : undefined}
                   type="number"
                   min="0.01"
                   step="0.01"
@@ -1263,7 +1281,7 @@ export default function Dashboard({
                   type="number"
                   min="0"
                   step="0.01"
-                  defaultValue="0"
+                  defaultValue={editingDeal ? editingDeal.commission/100 : 0}
                   required
                 />
               </label>
@@ -1273,6 +1291,7 @@ export default function Dashboard({
                 Total capacity
                 <input
                   name="capacity"
+                  defaultValue={editingDeal?.capacity}
                   type="number"
                   min="1"
                   step="1"
@@ -1281,13 +1300,14 @@ export default function Dashboard({
               </label>
               <label>
                 Reserve by
-                <input name="deadline" type="date" min={today()} required />
+                <input name="deadline" type="date" defaultValue={editingDeal?.deadline} min={editingDeal && editingDeal.deadline < today() ? editingDeal.deadline : today()} required />
               </label>
             </div>
             <label>
               Delivery instructions
               <textarea
                 name="instructions"
+                defaultValue={editingDeal?.instructions}
                 rows={3}
                 required
                 maxLength={2000}
@@ -1295,14 +1315,15 @@ export default function Dashboard({
               />
             </label>
             <label className="checkbox-label"><input type="checkbox" name="labels_offered" checked={labelsOffered} onChange={e=>setLabelsOffered(e.target.checked)} />Prepaid shipping labels available</label>
-            {labelsOffered && <label>Minimum units for a shipping label<input name="label_min_quantity" type="number" min={1} step={1} defaultValue={1} required /></label>}
+            {labelsOffered && <label>Minimum units for a shipping label<input name="label_min_quantity" type="number" min={1} step={1} defaultValue={editingDeal?.label_min_quantity || 1} required /></label>}
+            {editingDeal && <p className="form-help">Existing reservations retain their saved payout terms.</p>}
             {error && (
               <p role="alert" className="error">
                 {error}
               </p>
             )}
             <button disabled={busy} className="primary full">
-              Post deal <Plus size={16} />
+              {editingDeal ? "Save changes" : "Post deal"} <Plus size={16} />
             </button>
           </form>
         </Modal>

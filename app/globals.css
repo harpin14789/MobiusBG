@@ -57,6 +57,10 @@
 .member-profile-link:hover { text-decoration: underline; }
 .wide-modal { width: 1000px; }
 .management-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+.retailer-links { display:flex; flex-wrap:wrap; gap:12px; }
+.retailer-links a { display:inline-flex; align-items:center; gap:4px; }
+.deal-management { display:flex; gap:8px; margin-top:14px; }
+.extra-retailer { border-top:1px solid var(--line); margin-top:14px; }
 .checkbox-label { display: flex; flex-direction: row; align-items: center; gap: 10px; }
 .checkbox-label input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 auto; }
 .google-auth {

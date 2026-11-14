@@ -93,7 +93,7 @@ export async function rpc(
 }
 
 export async function postDeal(client: SupabaseClient, d: Deal) {
-  await rpc(client, "create_deal_with_labels", {
+  await rpc(client, "create_deal_with_retailers", {
     p_id: d.id,
     p_title: d.title,
     p_category: d.category,
@@ -105,5 +105,6 @@ export async function postDeal(client: SupabaseClient, d: Deal) {
     p_deadline: d.deadline,
     p_instructions: d.instructions,
     p_label_min_quantity: d.label_min_quantity ?? null,
+    p_retailers: d.retailers ?? [{name:d.retailer,url:d.url}],
   });
 }

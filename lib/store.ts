@@ -11,6 +11,8 @@ export type Deal = {
   instructions: string;
   reserved?: number;
   label_min_quantity?: number | null;
+  retailers?: { name: string; url: string }[];
+  archived?: boolean;
 };
 export type LabelRequest = {
   id: string; reservation_id: string; member_id: string; email: string;
