@@ -34,7 +34,10 @@ async function deal(capacity=10){
   expect(result.error).toBeNull();return id;
 }
 async function reserve(client:SupabaseClient,dealId:string,quantity=1,id=randomUUID()){
-  return client.rpc('reserve_deal',{p_deal_id:dealId,p_quantity:quantity,p_request_id:id});
+  const user=(await client.auth.getUser()).data.user;
+  const d=(await service.from('deals').select('base,commission').eq('id',dealId).single()).data!;
+  const t=user ? (await service.from('deal_member_terms').select('base,commission').eq('deal_id',dealId).eq('member_id',user.id).maybeSingle()).data : null;
+  return client.rpc('reserve_deal_at_terms',{p_deal_id:dealId,p_quantity:quantity,p_request_id:id,p_expected_base:t?.base ?? d.base,p_expected_commission:t?.commission ?? d.commission});
 }
 
 test.beforeAll(async()=>{
@@ -72,6 +75,117 @@ test('simultaneous reservations cannot overbook, and request retries are idempot
   expect(retried.every(r=>!r.error)).toBe(true);
   expect((await member.from('deals').select('reserved').eq('id',retryDeal).single()).data?.reserved).toBe(1);
   expect((await reserve(member,retryDeal,2,request)).error).not.toBeNull();
+});
+
+test('members can change or cancel their reservations without overbooking or changing locked terms',async()=>{
+  const id=await deal(5),a=await reserve(member,id,2),b=await reserve(other,id,2);
+  expect(a.error).toBeNull();expect(b.error).toBeNull();
+  const set=(c:SupabaseClient,r:string,n:number)=>c.rpc('set_reservation_quantity',{p_id:r,p_quantity:n});
+  expect((await set(other,a.data,1)).error).not.toBeNull();
+  expect((await set(admin,a.data,1)).error).not.toBeNull();
+  const concurrent=await Promise.all([set(member,a.data,3),set(other,b.data,3)]);
+  expect(concurrent.filter(r=>!r.error)).toHaveLength(1);
+  expect(concurrent.filter(r=>r.error)).toHaveLength(1);
+  expect((await member.from('deals').select('reserved').eq('id',id).single()).data?.reserved).toBe(5);
+  const success=concurrent[0].error ? {client:other,id:b.data} : {client:member,id:a.data};
+  expect((await set(success.client,success.id,3)).error).toBeNull();
+  expect((await member.from('deals').select('reserved').eq('id',id).single()).data?.reserved).toBe(5);
+  expect((await set(success.client,success.id,0)).error).toBeNull();
+  expect((await member.from('deals').select('reserved').eq('id',id).single()).data?.reserved).toBe(2);
+  expect((await success.client.from('reservations').select('quantity').eq('id',success.id).single()).data?.quantity).toBe(0);
+  expect((await set(success.client,success.id,1)).error).toBeNull();
+  expect((await service.from('deals').update({base:100,commission:0}).eq('id',id)).error).toBeNull();
+  expect((await set(success.client,success.id,2)).error).not.toBeNull();
+  expect((await set(success.client,success.id,0)).error).toBeNull();
+  const history=await admin.from('audit_events').select('action,details').eq('subject_id',success.id).eq('action','reservation_changed');
+  expect(history.data!.length).toBeGreaterThanOrEqual(3);
+});
+
+test('reservation quantities cannot drop below deliveries or label requests',async()=>{
+  const id=randomUUID();
+  expect((await admin.rpc('create_deal_with_labels',{p_id:id,p_title:'Quantity safeguards',p_category:'Laptops',p_retailer:'Test',p_url:'https://example.com',p_base:100,p_commission:0,p_capacity:10,p_deadline:'2099-12-31',p_instructions:'Test',p_label_min_quantity:1})).error).toBeNull();
+  const r=await reserve(member,id,4);expect(r.error).toBeNull();
+  expect((await member.rpc('save_delivery_submission',{p_reservation_id:r.data,p_submission_id:null,p_payment_name:'Test Member',p_upc:'195133197656',p_method:'Ship to warehouse',p_reference:'TEST123',p_quantity:2,p_destination:'Blue Ocean Dropoff',p_amazon_otp:''})).error).toBeNull();
+  const set=(n:number)=>member.rpc('set_reservation_quantity',{p_id:r.data,p_quantity:n});
+  expect((await set(1)).error).not.toBeNull();
+  expect((await member.rpc('save_label_request',{p_reservation_id:r.data,p_contact:'@testmember',p_origin_zip:'60601',p_box_quantities:[3],p_box_weights:[25]})).error).toBeNull();
+  expect((await set(2)).error).not.toBeNull();
+  expect((await set(3)).error).toBeNull();
+  expect((await admin.rpc('record_units',{p_id:r.data,p_kind:'received',p_units:3})).error).toBeNull();
+  expect((await set(2)).error).not.toBeNull();
+});
+
+test('member edits a reservation through the workspace',async({page})=>{
+  const id=await deal(4),title=(await admin.from('deals').select('title').eq('id',id).single()).data!.title;
+  expect((await reserve(member,id,1)).error).toBeNull();
+  await page.goto('/workspace');await page.getByLabel('Email',{exact:true}).fill(emails.member);
+  await page.getByLabel('Password',{exact:true}).fill(password);await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByRole('button',{name:'My reservations',exact:true}).click();
+  const row=page.locator('tbody tr').filter({hasText:title});
+  await row.getByRole('button',{name:'Edit reservation',exact:true}).click();
+  await page.getByLabel('New total quantity').fill('3');await page.getByRole('button',{name:'Save reservation'}).click();
+  await expect(row).toContainText('3 units');
+  await row.getByRole('button',{name:'Edit reservation',exact:true}).click();
+  await page.getByLabel('New total quantity').fill('0');await page.getByRole('button',{name:'Save reservation'}).click();
+  await expect(row).toContainText('Cancelled');
+  await expect(row.getByRole('button',{name:'Add delivery'})).toHaveCount(0);
+  expect((await member.from('deals').select('reserved').eq('id',id).single()).data?.reserved).toBe(0);
+});
+
+test('private deal pricing applies only to the chosen member and super admin can safely edit their reservation',async({page,browser})=>{
+  const id=await deal(8),title=(await admin.from('deals').select('title').eq('id',id).single()).data!.title;
+  const chosen=(await member.auth.getUser()).data.user!.id;
+  const otherId=(await other.auth.getUser()).data.user!.id;
+  const args={p_deal_id:id,p_member_id:chosen,p_base:24999,p_commission:1000};
+  expect((await member.rpc('set_member_deal_terms',args)).error).not.toBeNull();
+  expect((await admin.rpc('set_member_deal_terms',args)).error).toBeNull();
+  expect((await member.rpc('reserve_deal',{p_deal_id:id,p_quantity:1,p_request_id:randomUUID()})).error).not.toBeNull();
+  expect((await member.rpc('reserve_deal_at_terms',{p_deal_id:id,p_quantity:1,p_request_id:randomUUID(),p_expected_base:29999,p_expected_commission:1501})).error).not.toBeNull();
+  expect((await member.from('deal_member_terms').select('*').eq('deal_id',id)).data).toHaveLength(1);
+  expect((await other.from('deal_member_terms').select('*').eq('deal_id',id)).data).toEqual([]);
+  await page.goto('/workspace');await page.getByLabel('Email',{exact:true}).fill(emails.member);
+  await page.getByLabel('Password',{exact:true}).fill(password);await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByRole('button',{name:'Deals',exact:true}).click();await page.getByLabel('Search deals').fill(title);
+  const card=page.locator('article').filter({hasText:title});
+  await expect(card).toContainText('Your custom payout');await expect(card).toContainText('$259.99');
+  await card.getByRole('button',{name:'Reserve units'}).click();
+  await page.getByLabel('Quantity',{exact:true}).fill('2');await page.getByRole('button',{name:'Confirm reservation'}).click();
+  const reserved=(await member.from('reservations').select('*').eq('deal_id',id).single()).data!;
+  expect(reserved).toMatchObject({base:24999,commission:1000,quantity:2});
+  const standard=await reserve(other,id,1);expect(standard.error).toBeNull();
+  expect((await other.from('reservations').select('base,commission').eq('id',standard.data).single()).data).toEqual({base:29999,commission:1501});
+  expect((await admin.rpc('set_member_deal_terms',{...args,p_base:19999})).error).toBeNull();
+  expect((await member.rpc('set_reservation_quantity',{p_id:reserved.id,p_quantity:3})).error).not.toBeNull();
+  const changes={p_id:reserved.id,p_quantity:3,p_base:19999,p_commission:1000};
+  expect((await member.rpc('super_admin_update_reservation',changes)).error).not.toBeNull();
+  const ctx=await browser.newContext(),owner=await ctx.newPage();
+  try {
+    await owner.goto('/workspace');await owner.getByLabel('Email',{exact:true}).fill(emails.admin);
+    await owner.getByLabel('Password',{exact:true}).fill(password);await owner.getByRole('button',{name:'Sign in',exact:true}).click();
+    await owner.getByRole('button',{name:'Deals',exact:true}).click();await owner.getByLabel('Search deals').fill(title);
+    await owner.locator('article').filter({hasText:title}).getByRole('button',{name:'Set member pricing'}).click();
+    const pricing=owner.getByRole('dialog',{name:'Set member pricing'});
+    await pricing.getByLabel('Member',{exact:true}).selectOption(chosen);
+    await expect(pricing.getByLabel('Custom base payout per unit ($)')).toHaveValue('199.99');
+    await pricing.getByRole('button',{name:'Save member pricing'}).click();
+    await expect(pricing).toHaveCount(0);
+    await owner.getByRole('button',{name:'Reservations',exact:true}).click();
+    await owner.getByLabel('Search reservations by deal or member').fill(title);
+    await owner.locator('tbody tr').filter({hasText:title}).getByRole('button',{name:'View reservations'}).click();
+    const row=owner.getByRole('dialog',{name:`Reservations · ${title}`}).locator('tbody tr').filter({hasText:emails.member});
+    await row.getByRole('button',{name:'Edit member reservation'}).click();
+    const modal=owner.getByRole('dialog',{name:'Edit member reservation'});
+    await modal.getByLabel('New total quantity').fill('3');
+    await modal.getByLabel('Base payout per unit ($)').fill('199.99');
+    await modal.getByRole('button',{name:'Save member reservation'}).click();
+    await expect.poll(async()=> (await member.from('reservations').select('quantity,base').eq('id',reserved.id).single()).data).toEqual({quantity:3,base:19999});
+    expect((await admin.rpc('record_units',{p_id:reserved.id,p_kind:'received',p_units:1})).error).toBeNull();
+    expect((await admin.rpc('super_admin_update_reservation',{...changes,p_base:10000})).error).not.toBeNull();
+    expect((await member.rpc('set_reservation_quantity',{p_id:reserved.id,p_quantity:0})).error).not.toBeNull();
+    expect((await admin.rpc('set_member_deal_terms',{...args,p_member_id:otherId,p_base:null,p_commission:null})).error).toBeNull();
+    expect((await admin.rpc('set_member_deal_terms',{...args,p_base:null,p_commission:null})).error).toBeNull();
+    expect((await member.from('deal_member_terms').select('*').eq('deal_id',id)).data).toEqual([]);
+  }finally{await ctx.close();}
 });
 
 test('posting admins manage multiple retailers while deletion preserves reservations and payouts',async()=>{
@@ -484,6 +598,8 @@ test('members edit payment profiles and the super admin opens their profile from
     await history.getByText('UPC 195133197656 · 2 units').click();
     await expect(history).toContainText('PROFILETRACK123');
     expect((await other.from('reservations').select('id').eq('member_id',created.id)).data).toEqual([]);
+    await history.getByRole('link',{name:'Edit member reservation'}).click();
+    await expect(owner.getByRole('dialog',{name:'Edit member reservation'}).getByLabel('New total quantity')).toHaveValue('2');
     await expect(owner.getByRole('button',{name:'Save profile',exact:true})).toHaveCount(0);
     expect((await other.rpc('get_member_profile',{p_member_id:created.id,p_reveal_payment:true})).error).not.toBeNull();
   }finally{await context.close();}
@@ -568,7 +684,7 @@ test('super admin manages grouped reservations and only members can reserve unit
   await expect(dialog.locator('tbody tr')).toHaveCount(2);
   await dialog.getByRole('button',{name:'Manage deliveries',exact:true}).click();
   await expect(page.getByLabel('Search group reservations')).toHaveValue(title);
-  await expect(page.locator('tbody tr')).toHaveCount(2);
+  await expect(page.locator('tbody tr')).toHaveCount(0);
   await page.getByRole('button',{name:'Members',exact:true}).click();
   await page.getByLabel('Search members',{exact:true}).fill(emails.pending);
   await page.getByLabel('Membership status',{exact:true}).selectOption('pending');

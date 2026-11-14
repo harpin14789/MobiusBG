@@ -13,7 +13,9 @@ export type Deal = {
   label_min_quantity?: number | null;
   retailers?: { name: string; url: string }[];
   archived?: boolean;
+  custom_terms?: boolean;
 };
+export type MemberDealTerms = { id:string; deal_id:string; member_id:string; base:number; commission:number };
 export type LabelRequest = {
   id: string; reservation_id: string; member_id: string; email: string;
   contact: string; origin_zip: string; box_quantities: number[]; box_weights: number[];

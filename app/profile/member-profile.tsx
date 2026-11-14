@@ -168,14 +168,15 @@ export default function MemberProfile() {
                 const entries=submissions.filter(s=>s.reservation_id===r.id), label=labels.find(l=>l.reservation_id===r.id);
                 const awaiting=(r.received-r.paid)*(r.base+r.commission);
                 return <article className={styles.reservation} key={r.id}>
-                  <div className={styles.reservationHeading}><h3>{r.deals?.title || "Deal unavailable"}</h3><span>{r.deals?.archived ? "Deleted deal" : "Reservation"}</span></div>
+                  <div className={styles.reservationHeading}><h3>{r.deals?.title || "Deal unavailable"}</h3><span>{r.quantity===0 ? "Cancelled" : r.deals?.archived ? "Deleted deal" : "Reservation"}</span></div>
                   <p className={styles.description}>Reserved {new Date(r.created_at).toLocaleDateString()} · {r.id.slice(0,8).toUpperCase()}</p>
+                  <Link href={`/workspace?reservation=${r.id}`}>Edit member reservation</Link>
                   <dl className={styles.reservationStats}>
                     <div><dt>Reserved</dt><dd>{r.quantity} units</dd></div><div><dt>Received</dt><dd>{r.received} / {r.quantity}</dd></div>
                     <div><dt>Paid</dt><dd>{r.paid} / {r.quantity} units</dd></div><div><dt>Awaiting payout</dt><dd>{money(awaiting)}</dd></div>
                     <div><dt>Saved payout / unit</dt><dd>{money(r.base+r.commission)}</dd></div><div><dt>Total reservation payout</dt><dd>{money(r.quantity*(r.base+r.commission))}</dd></div>
                   </dl>
-                  <p><strong>Delivery:</strong> {r.submitted ? r.method : "Awaiting member details"}</p>
+                  <p><strong>Delivery:</strong> {r.quantity===0 ? "Reservation cancelled" : r.submitted ? r.method : "Awaiting member details"}</p>
                   {r.submitted && !entries.length && <p className={styles.description}>Previous delivery reference: {r.reference}</p>}
                   {entries.map(s=><details className={styles.submission} key={s.id}><summary>UPC {s.upc} · {s.quantity} units</summary><p>Payment name: {s.payment_name}<br />Destination: {s.destination}<br />Tracking / drop-off: {s.reference}{s.amazon_otp && <><br />Amazon delivery OTP: {s.amazon_otp}</>}</p></details>)}
                   {label && <details className={styles.submission}><summary>Label request · {label.status.replace('_',' ')}</summary><p>Contact: {label.contact}<br />Origin ZIP: {label.origin_zip}<br />{label.box_quantities.map((q,i)=>`Box ${i+1}: ${q} units, ${label.box_weights[i]} lb`).join(' · ')}</p></details>}

@@ -41,3 +41,5 @@ Errors store a sanitized category, not the SMTP response or password. Fix the de
 ## Member event emails
 
 Active, confirmed members receive an email for new and updated deals. Receipt and recorded-payment events go only to the reservation owner. Emails are queued and retried; large deal announcements can take longer to deliver. Test accounts using example.test are excluded. Payments happen outside Mobius; a payment email reports a recorded update, not proof of a transfer. Existing events are not backfilled.
+
+Private deal-term changes and super-admin changes to a reservation notify only the affected member; private payout amounts are reviewed inside the authenticated workspace rather than included in the notification email.

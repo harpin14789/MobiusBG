@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Deal, Reservation, State, DeliverySubmission, LabelRequest } from "./store";
+import type { Deal, Reservation, State, DeliverySubmission, LabelRequest, MemberDealTerms } from "./store";
 
 export type Profile = {
   id: string;
@@ -56,17 +56,22 @@ type ReservationRow = Omit<Reservation, "dealId" | "createdAt"> & {
 export async function loadWorkspace(
   client: SupabaseClient,
   admin: boolean,
-): Promise<{ state: State; members: Profile[] }> {
-  const [deals, reservations, members, submissions, labels] = await Promise.all([
+  memberId?: string,
+): Promise<{ state: State; members: Profile[]; customTerms: MemberDealTerms[] }> {
+  const [deals, reservations, members, submissions, labels, customTerms] = await Promise.all([
     rows<DealRow>(client, "deals"),
     rows<ReservationRow>(client, "reservations"),
     admin ? rows<Profile>(client, "profiles") : Promise.resolve([]),
     rows<DeliverySubmission>(client, "delivery_submissions"),
     rows<LabelRequest>(client, "label_requests"),
+    rows<MemberDealTerms>(client, "deal_member_terms"),
   ]);
   return {
     state: {
-      deals: deals.sort((a, b) => b.created_at.localeCompare(a.created_at)),
+      deals: deals.map(d=>{
+        const terms=!admin && customTerms.find(t=>t.deal_id===d.id && t.member_id===memberId);
+        return terms ? {...d,base:terms.base,commission:terms.commission,custom_terms:true} : d;
+      }).sort((a, b) => b.created_at.localeCompare(a.created_at)),
       reservations: reservations
         .map((r) => ({
           ...r,
@@ -80,6 +85,7 @@ export async function loadWorkspace(
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     },
     members,
+    customTerms,
   };
 }
 

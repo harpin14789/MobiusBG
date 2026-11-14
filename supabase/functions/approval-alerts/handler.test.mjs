@@ -99,3 +99,13 @@ test('member receipts and payments only go to the affected member and use record
   assert.match(f.sent[0].text,/recorded update/);
   assert.equal(f.calls.find(c=>c.name==='complete_member_event_alert').args.p_id,'event-1');
 });
+
+test('private pricing and reservation changes notify only the affected member', async () => {
+  const events=['custom_terms','reservation_updated'].map((kind,i)=>({id:`private-${i}`,member_id:alert.member_id,email:'member@example.test',kind,deal_title:'Sample deal',total_units:2,lease_token:`lease-${i}`}));
+  const f=fixture({alerts:[],memberEvents:events});
+  assert.equal((await f.request()).status,200);
+  assert.deepEqual(f.sent.map(mail=>mail.to),['member@example.test','member@example.test']);
+  assert.match(f.sent[0].subject,/private deal pricing/);
+  assert.match(f.sent[1].text,/New reserved quantity: 2/);
+  assert.ok(f.sent.every(mail=>!mail.text.includes('payment was recorded')));
+});

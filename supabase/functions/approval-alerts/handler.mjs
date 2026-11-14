@@ -56,16 +56,16 @@ export function createHandler({ secret, client, sendMail, sender, recipient, sit
       let delivered = false, errorCode = null;
       try {
         const isMember = alert.kind === 'member_event';
-        const dealAction = alert.kind === 'member_event' && ['deal_created','deal_updated'].includes(alert.event_kind || alert.kind_original);
         const eventKind = alert.event_kind || alert.kind_original;
-        const action = eventKind === 'deal_created' ? 'A new deal is available' : eventKind === 'deal_updated' ? 'A deal has been updated' : eventKind === 'received' ? 'Units were marked received' : 'A payment was recorded';
+        const dealAction = alert.kind === 'member_event' && ['deal_created','deal_updated','custom_terms'].includes(eventKind);
+        const action = eventKind === 'deal_created' ? 'A new deal is available' : eventKind === 'deal_updated' ? 'A deal has been updated' : eventKind === 'custom_terms' ? 'Your private deal pricing has changed' : eventKind === 'reservation_updated' ? 'Your reservation was updated' : eventKind === 'received' ? 'Units were marked received' : 'A payment was recorded';
         const amount = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format((Number(alert.amount_cents)||0)/100);
         await sendMail({
           from: sender, to: isMember ? alert.email : recipient,
           messageId: `<mobius-${alert.kind}-${alert.kind === 'approval' ? alert.member_id : alert.id}@mobiusbg.netlify.app>`,
           subject: isMember ? `Mobius: ${action}` : alert.kind === 'payment' ? 'Mobius: member payment information updated' : 'Mobius: a new member is awaiting approval',
           text: isMember
-            ? `${action}.\n\nDeal: ${alert.deal_title}\n${dealAction ? '' : `Units in this update: ${alert.quantity_delta}\nTotal ${eventKind === 'received' ? 'received' : 'paid'} units: ${alert.total_units}\n${eventKind === 'paid' ? `Amount recorded: ${amount}\nPayments are sent separately; this email confirms only the recorded update.\n` : ''}`}\nSign in to review the details:\n${siteUrl}/workspace`
+            ? `${action}.\n\nDeal: ${alert.deal_title}\n${dealAction ? '' : eventKind === 'reservation_updated' ? `New reserved quantity: ${alert.total_units}\n` : `Units in this update: ${alert.quantity_delta}\nTotal ${eventKind === 'received' ? 'received' : 'paid'} units: ${alert.total_units}\n${eventKind === 'paid' ? `Amount recorded: ${amount}\nPayments are sent separately; this email confirms only the recorded update.\n` : ''}`}\nSign in to review the details:\n${siteUrl}/workspace`
             : alert.kind === 'payment'
             ? `A member has added, changed, or removed their payment information.\n\nMember: ${alert.full_name || 'Name not provided'}\nEmail: ${alert.email}\n\nSign in as the super admin to review the current payment information:\n${siteUrl}/profile?member=${alert.member_id}\n\nBank account numbers and payment codes are intentionally omitted from this email. No payment has been initiated.`
             : `A new member has verified their email and is waiting for your approval.\n\nMember email: ${alert.email}\n\nSign in as the Mobius super admin, open Members, and choose Approve membership for this email:\n${siteUrl}/workspace\n\nNo access is granted by this email. Review the request in the workspace.`,

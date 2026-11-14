@@ -22,6 +22,7 @@ import {
 import {
   Deal,
   DeliverySubmission,
+  MemberDealTerms,
   LabelRequest,
   Reservation,
   State,
@@ -107,8 +108,10 @@ export default function Dashboard({
     live ? { deals: [], reservations: [] } : seed,
   );
   const [members, setMembers] = useState<Profile[]>([]);
+  const [customTerms,setCustomTerms] = useState<MemberDealTerms[]>([]);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const reservationLinkHandled = useRef(false);
   const reservationRequest = useRef("");
   const [loaded, setLoaded] = useState(false);
   const postingOnly = live && account.role === "admin";
@@ -121,6 +124,10 @@ export default function Dashboard({
   const [filter, setFilter] = useState("All deals");
   const [notice, setNotice] = useState("");
   const [reserveDeal, setReserveDeal] = useState<Deal | null>(null);
+  const [editReservation,setEditReservation] = useState<Reservation | null>(null);
+  const [adminEditReservation,setAdminEditReservation] = useState<Reservation | null>(null);
+  const [customDeal,setCustomDeal] = useState<Deal | null>(null);
+  const [customMember,setCustomMember] = useState("");
   const [delivery, setDelivery] = useState<Reservation | null>(null);
   const [editingSubmission, setEditingSubmission] = useState<DeliverySubmission | null>(null);
   const [labelReservation, setLabelReservation] = useState<Reservation | null>(null);
@@ -136,9 +143,10 @@ export default function Dashboard({
   const [memberStatus, setMemberStatus] = useState("all");
   async function reload() {
     if (!client) return;
-    const result = await loadWorkspace(client, admin);
+    const result = await loadWorkspace(client, admin, account?.id);
     setState(result.state);
     setMembers(result.members);
+    setCustomTerms(result.customTerms);
     setLoaded(true);
   }
   useEffect(() => {
@@ -146,10 +154,11 @@ export default function Dashboard({
       let cancelled = false;
       const refresh = async () => {
         try {
-          const result = await loadWorkspace(client, admin);
+          const result = await loadWorkspace(client, admin, account?.id);
           if (!cancelled) {
             setState(result.state);
             setMembers(result.members);
+            setCustomTerms(result.customTerms);
             setLoaded(true);
           }
         } catch (e) {
@@ -187,6 +196,17 @@ export default function Dashboard({
     window.addEventListener("storage", sync);
     return () => window.removeEventListener("storage", sync);
   }, [client, admin]);
+
+  useEffect(()=>{
+    if(!superAdmin || !loaded || reservationLinkHandled.current)return;
+    const id=new URLSearchParams(window.location.search).get('reservation');
+    if(!id)return;
+    reservationLinkHandled.current=true;
+    const target=state.reservations.find(r=>r.id===id);
+    if(target){setTab('Reservations');setAdminEditReservation(target);setError('');}
+    else setError('Reservation not found or no longer available.');
+    window.history.replaceState(null,'',window.location.pathname);
+  },[superAdmin,loaded,state.reservations]);
 
   async function changeCloud(operation: () => Promise<void>): Promise<boolean> {
     if (busyRef.current) return false;
@@ -255,10 +275,12 @@ export default function Dashboard({
         reservationRequest.current = crypto.randomUUID();
       if (
         await changeCloud(() =>
-          rpc(client, "reserve_deal", {
+          rpc(client, "reserve_deal_at_terms", {
             p_deal_id: reserveDeal.id,
             p_quantity: quantity,
             p_request_id: reservationRequest.current,
+            p_expected_base: reserveDeal.base,
+            p_expected_commission: reserveDeal.commission,
           }),
         )
       ) {
@@ -366,6 +388,49 @@ export default function Dashboard({
           ? "Deal posted. Members can now reserve units."
           : "Deal posted. Members can now reserve units in this demo.",
       );
+    }
+  }
+
+  async function saveReservationQuantity(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!editReservation) return;
+    const next = Number(new FormData(e.currentTarget).get("quantity"));
+    const saved = client ? await changeCloud(() => rpc(client,"set_reservation_quantity",{p_id:editReservation.id,p_quantity:next})) : update(current => {
+      const r=current.reservations.find(item=>item.id===editReservation.id);
+      const d=current.deals.find(item=>item.id===r?.dealId);
+      if(!r || !d)throw Error("Reservation not found.");
+      const submitted=(r.submissions||[]).reduce((sum,item)=>sum+item.quantity,0);
+      const minimum=Math.max(submitted,r.received,r.labelRequest?.quantity||0,r.submitted && !submitted ? r.quantity : 0);
+      if(!Number.isSafeInteger(next)||next<minimum||next>100000)throw Error(`Keep at least ${minimum} units already submitted, received, or included in a label request.`);
+      if(next>r.quantity){
+        if(d.archived || d.deadline<today())throw Error("This deal is closed; units cannot be added.");
+        if(d.base!==r.base || d.commission!==r.commission)throw Error("Payout terms changed. Make a new reservation for additional units at the current terms.");
+        if(next-r.quantity>remaining(current,d))throw Error("Not enough capacity remains.");
+      }
+      return {...current,reservations:current.reservations.map(item=>item.id===r.id?{...item,quantity:next}:item)};
+    });
+    if(saved){setEditReservation(null);setNotice(next===0 ? "Reservation cancelled. Its capacity is available again." : "Reservation updated.");}
+  }
+
+  async function saveAdminReservation(e:React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if(!client || !adminEditReservation || !superAdmin)return;
+    const form=new FormData(e.currentTarget);
+    const next=Number(form.get('quantity'));
+    const base=Math.round(Number(form.get('base'))*100), commission=Math.round(Number(form.get('commission'))*100);
+    if(!Number.isSafeInteger(next)||next<0||!Number.isSafeInteger(base)||base<1||!Number.isSafeInteger(commission)||commission<0){setError('Enter valid quantity and payout amounts.');return;}
+    if(await changeCloud(()=>rpc(client,'super_admin_update_reservation',{p_id:adminEditReservation.id,p_quantity:next,p_base:base,p_commission:commission}))){
+      setAdminEditReservation(null);setNotice('Member reservation updated. Active members with a verified email will be notified.');
+    }
+  }
+
+  async function saveMemberPricing(e:React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if(!client||!customDeal||!customMember||!superAdmin)return;
+    const form=new FormData(e.currentTarget),base=Math.round(Number(form.get('base'))*100),commission=Math.round(Number(form.get('commission'))*100);
+    if(!Number.isSafeInteger(base)||base<1||!Number.isSafeInteger(commission)||commission<0){setError('Enter valid payout amounts.');return;}
+    if(await changeCloud(()=>rpc(client,'set_member_deal_terms',{p_deal_id:customDeal.id,p_member_id:customMember,p_base:base,p_commission:commission}))){
+      setCustomDeal(null);setNotice('Private deal pricing saved. Active members with a verified email will be notified.');
     }
   }
 
@@ -496,9 +561,9 @@ export default function Dashboard({
       );
   }
 
-  const visibleReservations = state.reservations.filter(r => (tab !== "Deliveries" || r.submitted) && (!superAdmin ||
+  const visibleReservations = state.reservations.filter(r => (tab !== "Deliveries" || r.submitted) && (tab !== "Payouts" || r.quantity>0) && (!superAdmin ||
     `${state.deals.find(d=>d.id===r.dealId)?.title} ${r.memberEmail || ""} ${members.find(m=>m.id===r.memberId)?.full_name || ""} ${r.reference}`.toLowerCase().includes(reservationSearch.toLowerCase())));
-  const reservationGroups = state.deals.map(deal => ({deal, entries: state.reservations.filter(r=>r.dealId===deal.id)}))
+  const reservationGroups = state.deals.map(deal => ({deal, entries: state.reservations.filter(r=>r.dealId===deal.id && r.quantity>0)}))
     .filter(group => group.entries.length && `${group.deal.title} ${group.entries.map(r=>r.memberEmail || "").join(" ")}`.toLowerCase().includes(reservationSearch.toLowerCase()));
   const groupReservations = <div className="table-wrap"><table><thead><tr><th>Deal</th><th>Reserved / capacity</th><th>Members</th><th>Received</th><th>Unpaid received units</th><th>Details</th></tr></thead><tbody>
     {reservationGroups.map(({deal,entries})=><tr key={deal.id}><td><strong>{deal.title}</strong><small>Deadline: {deal.deadline}</small></td><td>{entries.reduce((n,r)=>n+r.quantity,0)} / {deal.capacity}</td><td>{new Set(entries.map(r=>r.memberId)).size}</td><td>{entries.reduce((n,r)=>n+r.received,0)}</td><td>{entries.reduce((n,r)=>n+r.received-r.paid,0)}</td><td><button className="small-button" onClick={()=>setSelectedReservationDeal(deal)}>View reservations</button></td></tr>)}
@@ -537,9 +602,9 @@ export default function Dashboard({
                     / unit
                   </small>
                 </td>
-                <td>{r.quantity} units</td>
+                <td>{r.quantity === 0 ? "Cancelled" : `${r.quantity} units`}</td>
                 <td>
-                  {r.submitted ? (
+                  {r.quantity === 0 ? <span className="badge">Cancelled</span> : r.submitted ? (
                     <>
                       <span className="badge blue">{r.method}</span>
                       <small>{r.reference}</small>
@@ -597,7 +662,7 @@ export default function Dashboard({
                         Mark received
                       </button>
                     </form>
-                  ) : (
+                  ) : r.quantity===0 ? null : (
                     <button
                       className="small-button"
                       onClick={() => {
@@ -609,8 +674,9 @@ export default function Dashboard({
                       {r.submitted ? "Edit delivery" : "Add delivery"}
                     </button>
                   )}
+                  {!admin && !postingOnly && tab === "My reservations" && <button className="small-button" onClick={()=>{setEditReservation(r);setError("");}}>Edit reservation</button>}
                   {!admin && !postingOnly && !!r.submissions?.length && r.submissions.reduce((n,s)=>n+s.quantity,0)<r.quantity && <button className="small-button" onClick={() => {setDelivery(r);setEditingSubmission(null);setError("");}}>Add another UPC</button>}
-                  {deal.label_min_quantity && !admin && !postingOnly && <div className="label-request-action">
+                  {r.quantity>0 && deal.label_min_quantity && !admin && !postingOnly && <div className="label-request-action">
                     {r.labelRequest && <small>Label request: {r.labelRequest.status.replace("_"," ")}</small>}
                     {r.quantity >= deal.label_min_quantity && (!r.labelRequest || r.labelRequest.status === "requested") ? <button className="small-button" onClick={() => {setLabelReservation(r);setError("");}}>{r.labelRequest ? "Edit label request" : "Request shipping label"}</button> : !r.labelRequest && <small>Prepaid label minimum: {deal.label_min_quantity} units</small>}
                   </div>}
@@ -973,6 +1039,7 @@ export default function Dashboard({
                             ? ` + ${money(d.commission)} commission`
                             : " · No additional commission"}
                         </p>
+                        {d.custom_terms && <p className="label-offer">Your custom payout for this deal</p>}
                         {!!d.label_min_quantity && <p className="label-offer">Prepaid shipping labels · minimum {d.label_min_quantity} units</p>}
                         <div className="capacity-label">
                           <span>
@@ -1003,7 +1070,7 @@ export default function Dashboard({
                             <ArrowRight size={15} />
                           </button>}
                         </div>
-                        {canPostDeals && <div className="deal-management"><button className="small-button" onClick={()=>{setEditingDeal(d);setExtraRetailers((d.retailers?.length ? d.retailers : [{name:d.retailer,url:d.url}]).slice(1));setLabelsOffered(!!d.label_min_quantity);setError("");setCreate(true);}}>Edit deal</button><button className="small-button" disabled={busy} onClick={()=>{if(!window.confirm(`Delete “${d.title}”? Existing reservations and payment records will be preserved.`))return;void (async()=>{const ok=client?await changeCloud(()=>rpc(client,'delete_deal',{p_id:d.id})):update(s=>({...s,deals:s.deals.map(deal=>deal.id===d.id?{...deal,archived:true}:deal)}));if(ok)setNotice('Deal deleted. Existing reservations remain available.');})();}}>Delete deal</button></div>}
+                        {canPostDeals && <div className="deal-management"><button className="small-button" onClick={()=>{setEditingDeal(d);setExtraRetailers((d.retailers?.length ? d.retailers : [{name:d.retailer,url:d.url}]).slice(1));setLabelsOffered(!!d.label_min_quantity);setError("");setCreate(true);}}>Edit deal</button><button className="small-button" disabled={busy} onClick={()=>{if(!window.confirm(`Delete “${d.title}”? Existing reservations and payment records will be preserved.`))return;void (async()=>{const ok=client?await changeCloud(()=>rpc(client,'delete_deal',{p_id:d.id})):update(s=>({...s,deals:s.deals.map(deal=>deal.id===d.id?{...deal,archived:true}:deal)}));if(ok)setNotice('Deal deleted. Existing reservations remain available.');})();}}>Delete deal</button>{superAdmin && <button className="small-button" onClick={()=>{setCustomDeal(d);setCustomMember("");setError("");}}>Set member pricing</button>}</div>}
                       </div>
                     </article>
                   );
@@ -1210,12 +1277,51 @@ export default function Dashboard({
           </form>
         </Modal>
       )}
+      {editReservation && (()=>{
+        const deal=state.deals.find(d=>d.id===editReservation.dealId)!;
+        const submitted=(editReservation.submissions||[]).reduce((n,s)=>n+s.quantity,0);
+        const minimum=Math.max(submitted,editReservation.received,editReservation.labelRequest?.quantity||0,editReservation.submitted && !submitted ? editReservation.quantity : 0);
+        const canIncrease=!deal.archived && deal.deadline>=today() && deal.base===editReservation.base && deal.commission===editReservation.commission;
+        const maximum=canIncrease ? Math.min(100000,editReservation.quantity+remaining(state,deal)) : editReservation.quantity;
+        return <Modal title="Edit reservation" close={()=>setEditReservation(null)}><form onSubmit={saveReservationQuantity}>
+          <p className="form-help">{deal.title} · Your saved payout is {money(editReservation.base+editReservation.commission)} per unit.</p>
+          <label>New total quantity<input name="quantity" type="number" min={minimum} max={maximum} step={1} defaultValue={editReservation.quantity} required autoFocus /></label>
+          <p className="form-help">Enter 0 to cancel. Units already submitted for delivery, received, or included in a label request cannot be dropped. Additional units require available capacity and the same payout terms.</p>
+          {error && <p role="alert" className="error">{error}</p>}
+          <button className="primary full" disabled={busy}>Save reservation</button>
+        </form></Modal>;
+      })()}
       {selectedReservationDeal && superAdmin && <Modal wide title={`Reservations · ${selectedReservationDeal.title}`} close={()=>setSelectedReservationDeal(null)}>
         <p className="form-help">{state.reservations.filter(r=>r.dealId===selectedReservationDeal.id).reduce((n,r)=>n+r.quantity,0)} units reserved of {selectedReservationDeal.capacity} capacity.</p>
         <div className="table-wrap"><table><thead><tr><th>Member</th><th>Reserved</th><th>Received</th><th>Paid units</th><th>Awaiting payout</th><th>Delivery</th></tr></thead><tbody>
-          {state.reservations.filter(r=>r.dealId===selectedReservationDeal.id).map(r=><tr key={r.id}><td><a className="member-profile-link" href={`/profile?member=${r.memberId}`}><strong>{members.find(m=>m.id===r.memberId)?.full_name || "Name not provided"}</strong><small>{r.memberEmail}</small></a></td><td>{r.quantity}</td><td>{r.received}</td><td>{r.paid}</td><td>{money((r.received-r.paid)*(r.base+r.commission))}</td><td>{r.submitted ? <>{r.method}<small>{r.reference}</small>{r.submissions?.map(s=><details className="submission-details" key={s.id}><summary>UPC {s.upc} · {s.quantity} units</summary><small>Payment name: {s.payment_name}<br />Destination: {s.destination}<br />{s.reference}{s.amazon_otp && <><br />Amazon delivery OTP: {s.amazon_otp}</>}</small></details>)}</> : "Awaiting details"}</td></tr>)}
+          {state.reservations.filter(r=>r.dealId===selectedReservationDeal.id && r.quantity>0).map(r=><tr key={r.id}><td><a className="member-profile-link" href={`/profile?member=${r.memberId}`}><strong>{members.find(m=>m.id===r.memberId)?.full_name || "Name not provided"}</strong><small>{r.memberEmail}</small></a><button className="small-button" onClick={()=>{setAdminEditReservation(r);setSelectedReservationDeal(null);setError("");}}>Edit member reservation</button></td><td>{r.quantity}</td><td>{r.received}</td><td>{r.paid}</td><td>{money((r.received-r.paid)*(r.base+r.commission))}</td><td>{r.submitted ? <>{r.method}<small>{r.reference}</small>{r.submissions?.map(s=><details className="submission-details" key={s.id}><summary>UPC {s.upc} · {s.quantity} units</summary><small>Payment name: {s.payment_name}<br />Destination: {s.destination}<br />{s.reference}{s.amazon_otp && <><br />Amazon delivery OTP: {s.amazon_otp}</>}</small></details>)}</> : "Awaiting details"}</td></tr>)}
         </tbody></table></div>
         <div className="management-actions"><button className="primary" onClick={()=>{setReservationSearch(selectedReservationDeal.title);setTab('Deliveries');setSelectedReservationDeal(null);}}>Manage deliveries</button><button className="primary" onClick={()=>{setReservationSearch(selectedReservationDeal.title);setTab('Payouts');setSelectedReservationDeal(null);}}>Manage payouts</button></div>
+      </Modal>}
+      {adminEditReservation && superAdmin && (()=>{
+        const r=adminEditReservation,deal=state.deals.find(d=>d.id===r.dealId)!;
+        const submitted=(r.submissions||[]).reduce((n,s)=>n+s.quantity,0);
+        const minimum=Math.max(submitted,r.received,r.labelRequest?.quantity||0,r.submitted && !submitted ? r.quantity : 0);
+        const max=deal.archived || deal.deadline<today() ? r.quantity : Math.min(100000,r.quantity+remaining(state,deal));
+        return <Modal title="Edit member reservation" close={()=>setAdminEditReservation(null)}><form onSubmit={saveAdminReservation}>
+          <p className="form-help">{deal.title} · {r.memberEmail}</p>
+          <label>New total quantity<input name="quantity" type="number" min={minimum} max={max} step={1} defaultValue={r.quantity} required /></label>
+          <label>Base payout per unit ($)<input name="base" type="number" min="0.01" step="0.01" defaultValue={r.base/100} readOnly={r.received>0 || r.paid>0} required /></label>
+          <label>Commission per unit ($)<input name="commission" type="number" min="0" step="0.01" defaultValue={r.commission/100} readOnly={r.received>0 || r.paid>0} required /></label>
+          <p className="form-help">Enter 0 to cancel. Units already submitted, received, or included in a label request cannot be dropped. Payout terms are locked after units are received or paid. This changes only this member’s reservation.</p>
+          {error && <p role="alert" className="error">{error}</p>}<button className="primary full" disabled={busy}>Save member reservation</button>
+        </form></Modal>;
+      })()}
+      {customDeal && superAdmin && <Modal title="Set member pricing" close={()=>setCustomDeal(null)}>
+        <p className="form-help">{customDeal.title} · Standard payout: {money(customDeal.base+customDeal.commission)} per unit.</p>
+        <label>Member<select aria-label="Member" value={customMember} onChange={e=>{setCustomMember(e.target.value);setError('');}}><option value="">Select a member</option>{members.filter(m=>m.role==='member').map(m=><option key={m.id} value={m.id}>{m.full_name ? `${m.full_name} · ${m.email}` : m.email}{m.active ? '' : ' (awaiting approval)'}</option>)}</select></label>
+        {customMember && (()=>{const existing=customTerms.find(t=>t.deal_id===customDeal.id && t.member_id===customMember);return <form key={customMember} onSubmit={saveMemberPricing}>
+          <label>Custom base payout per unit ($)<input name="base" type="number" min="0.01" step="0.01" defaultValue={(existing?.base ?? customDeal.base)/100} required /></label>
+          <label>Custom commission per unit ($)<input name="commission" type="number" min="0" step="0.01" defaultValue={(existing?.commission ?? customDeal.commission)/100} required /></label>
+          <p className="form-help">Only this member sees these terms. They apply to new reservations; existing reservations retain their saved terms. To change an existing reservation, edit it from Reservations.</p>
+          {error && <p role="alert" className="error">{error}</p>}<button className="primary full" disabled={busy}>Save member pricing</button>
+          {existing && <button type="button" className="text-button" disabled={busy} onClick={()=>void (async()=>{if(await changeCloud(()=>rpc(client!,'set_member_deal_terms',{p_deal_id:customDeal.id,p_member_id:customMember,p_base:null,p_commission:null}))){setCustomDeal(null);setNotice('Standard deal pricing restored for this member.');}})()}>Restore standard pricing</button>}
+        </form>;})()}
       </Modal>}
       {delivery && (
         <Modal title="Delivery details" close={() => setDelivery(null)}>
