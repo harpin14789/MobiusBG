@@ -43,3 +43,5 @@ This history summarizes work represented in the repository; it does not claim th
 - Documented proposed regional and delivery-method caps, delivery and Blue Ocean receipt workflows, pending-payment adjustments, invoices, and a possible future US Bank ACH export. These are requirements for future development, not implemented features.
 
 - Clarified the planned caps as separate limits for each region and delivery-method combination; invoice generation is deferred for later discussion.
+
+- Added a proposed staged implementation plan, acceptance checks, and unresolved workflow decisions for the future fulfillment and payout work.

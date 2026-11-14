@@ -25,3 +25,31 @@ These are requirements supplied by the co-founder for a future replacement of th
 ## Existing functionality and key differences
 
 Existing deal and delivery flows, label requests, manual receipt and payment records, and member-specific pricing are described in [member submissions](member-submissions.md) and [member profiles](member-profiles.md). Label requests currently do not generate or email labels. Current reservation pricing cannot be edited after any units are received or paid; the proposed pending-payment adjustment requires a deliberate change to that rule. Blue Ocean integration, the requested caps, invoices, and ACH export are not established by this document as implemented.
+
+## Proposed implementation sequence
+
+This sequence is a proposal, not an implementation. The owner's answers and any necessary external integration details determine the final design.
+
+1. **Deal options and commitments.** Allow deal posters to configure permitted fulfillment methods and a separate cap for each West/Central/East and method combination. Members choose an eligible option when reserving. Protect each cap against simultaneous reservations and edits, preserve existing reservations when migrating, and show available capacity clearly. Decide how regions are assigned and how tax-exempt eligibility is verified before building.
+2. **Delivery submissions.** Guide members through the selected method: dropship tracking, a Blue Ocean drop-off receipt code, or a label request. Keep reservation, submitted delivery, and actual receipt distinct. Support partial deliveries and ensure submissions do not exceed committed quantities. Confirm whether existing submissions need conversion and how addresses are presented.
+3. **Uploaded shipping labels.** Let the super admin attach an externally generated label to the appropriate member request, with private access and a reliable notification. Define accepted file types, storage and retention, email attachment versus secure download, and how to resend or replace a label. This does not create labels or purchase postage.
+4. **Receipt verification.** Provide a manual super-admin receipt workflow that records the quantity and evidence and moves received, unpaid units into pending payment. Explore Blue Ocean automation only after obtaining its API documentation, access and matching rules; handle duplicate events, partial receipt and failures. Keep manual review available.
+5. **Pending payment and payout list.** Let the super admin adjust pending payout amounts with a reason and an audit trail without changing amounts already paid. Define whether adjustments apply per unit, as a separate amount, or both; handle partially paid reservations explicitly. Show/export member, item, quantity, saved payout, adjustments and amount due. Confirm the desired export format and who can access it.
+6. **Later: invoice and ACH.** Revisit invoice requirements after the preceding flows work. Treat a US Bank ACH batch file as a separate future project requiring the bank's current specifications, secure handling and explicit review before use; no funds should be initiated by the app without a separately agreed workflow.
+
+## Acceptance checks across stages
+
+- Member, posting-only admin and super-admin permissions are enforced by database policies/functions as well as the interface.
+- Concurrent reservations and quantity changes cannot exceed the appropriate cap; cancellation releases capacity without deleting history.
+- Existing reservations, submissions, payout records, private member data and audit history remain intact through migrations.
+- Receipt, payout adjustments and recorded payments preserve an auditable history, support partial quantities, and never count already-paid units twice.
+- Test locally with representative role, concurrency, delivery and payment scenarios; verify hosted migrations and notification configuration separately before announcing deployment.
+
+## Open decisions
+
+- How is West, Central or East chosen or assigned, and can it change after a reservation?
+- Can a deal offer more than one delivery method, and how is tax-exempt eligibility checked?
+- Are pending payout adjustments per unit, a separate dollar amount, or both? How should partial payments be handled?
+- What is Blue Ocean's API documentation and what identifies a drop-off or receipt? Manual verification can proceed without the API.
+- Should label emails contain an attachment or a secure link, and what file formats and retention are required?
+- What format should the pending-payment list use? Invoice details and ACH export are deferred.
