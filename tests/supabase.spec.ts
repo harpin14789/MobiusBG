@@ -449,6 +449,16 @@ test('members edit payment profiles and the super admin opens their profile from
   await page.getByLabel('Taekus Pay alphanumeric code',{exact:true}).fill('TAEKUS123abc');
   await page.getByRole('button',{name:'Save profile',exact:true}).click();
   await expect(page.getByRole('status')).toContainText('Profile saved');
+  await expect(page.getByRole('heading',{name:'Reservation history'})).toHaveCount(0);
+  const dealId=await deal(5);
+  const dealTitle=(await admin.from('deals').select('title').eq('id',dealId).single()).data!.title;
+  const reserved=await reserve(created.client,dealId,2);expect(reserved.error).toBeNull();
+  expect((await created.client.rpc('save_delivery_submission',{p_reservation_id:reserved.data,p_submission_id:null,p_payment_name:'Profile Member',p_upc:'195133197656',p_method:'Ship to warehouse',p_reference:'PROFILETRACK123',p_quantity:2,p_destination:'Blue Ocean Dropoff',p_amazon_otp:''})).error).toBeNull();
+  expect((await admin.rpc('record_units',{p_id:reserved.data,p_kind:'received',p_units:1})).error).toBeNull();
+  expect((await admin.rpc('record_units',{p_id:reserved.data,p_kind:'paid',p_units:1})).error).toBeNull();
+  const unrelatedId=await deal();
+  const unrelatedTitle=(await admin.from('deals').select('title').eq('id',unrelatedId).single()).data!.title;
+  expect((await reserve(other,unrelatedId)).error).toBeNull();
   const context=await browser.newContext(),owner=await context.newPage();
   try{
     await owner.goto('/workspace');
@@ -466,6 +476,14 @@ test('members edit payment profiles and the super admin opens their profile from
     await expect(owner.getByText('•••• 6789',{exact:true})).toBeVisible();
     await owner.getByRole('button',{name:'Show bank details',exact:true}).click();
     await expect(owner.getByText('000123456789',{exact:true})).toBeVisible();
+    const history=owner.getByRole('region',{name:'Reservation history'});
+    await expect(history).toContainText(dealTitle);
+    await expect(history).not.toContainText(unrelatedTitle);
+    await expect(history).toContainText('1 / 2');
+    await expect(history).toContainText('$315.00');
+    await history.getByText('UPC 195133197656 · 2 units').click();
+    await expect(history).toContainText('PROFILETRACK123');
+    expect((await other.from('reservations').select('id').eq('member_id',created.id)).data).toEqual([]);
     await expect(owner.getByRole('button',{name:'Save profile',exact:true})).toHaveCount(0);
     expect((await other.rpc('get_member_profile',{p_member_id:created.id,p_reveal_payment:true})).error).not.toBeNull();
   }finally{await context.close();}

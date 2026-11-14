@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "../../lib/supabase";
+import { money, type DeliverySubmission, type LabelRequest } from "../../lib/store";
 import styles from "./profile.module.css";
 
 type PaymentMethod = "none" | "bank" | "zelle" | "taekus";
@@ -19,6 +20,21 @@ const fieldNames: Record<string,string> = {
   account_last4: "Account ending", account_number: "Account number", routing_number: "Routing number",
   name: "Name on payment platform", identifier: "Zelle email or phone", code: "Taekus Pay code",
 };
+type MemberReservation = {
+  id:string; deal_id:string; quantity:number; base:number; commission:number;
+  received:number; paid:number; submitted:boolean; method:string; reference:string;
+  created_at:string; deals:{title:string;archived:boolean}|null;
+};
+
+async function memberRows<T>(client:SupabaseClient,table:string,selection:string,memberId:string):Promise<T[]> {
+  const rows:T[]=[];
+  for(let start=0;;start+=500){
+    const {data,error}=await client.from(table).select(selection).eq('member_id',memberId).order('id').range(start,start+499);
+    if(error)throw error;
+    rows.push(...data as T[]);
+    if(data.length<500)return rows;
+  }
+}
 
 export default function MemberProfile() {
   const [client,setClient] = useState<SupabaseClient | null>(null);
@@ -30,6 +46,11 @@ export default function MemberProfile() {
   const [message,setMessage] = useState("");
   const [revision,setRevision] = useState(0);
   const [enabled,setEnabled] = useState({bank:false,zelle:false,taekus:false});
+  const [reservations,setReservations] = useState<MemberReservation[]>([]);
+  const [submissions,setSubmissions] = useState<DeliverySubmission[]>([]);
+  const [labels,setLabels] = useState<LabelRequest[]>([]);
+  const [historyLoading,setHistoryLoading] = useState(false);
+  const [historyError,setHistoryError] = useState("");
 
   async function fetchProfile(c:SupabaseClient,target:string|null,reveal:boolean){
     const {data,error}=await c.rpc('get_member_profile',{p_member_id:target,p_reveal_payment:false});
@@ -53,7 +74,7 @@ export default function MemberProfile() {
         if(!c)throw Error("Account settings are unavailable. Please try again later.");
         setClient(c);
         const {data:{subscription}}=c.auth.onAuthStateChange((event)=>{
-          if(event==='SIGNED_OUT' && !cancelled){setProfile(null);setSignedIn(false);setMessage("");}
+          if(event==='SIGNED_OUT' && !cancelled){setProfile(null);setReservations([]);setSubmissions([]);setLabels([]);setSignedIn(false);setMessage("");}
         });
         unsubscribe=()=>subscription.unsubscribe();
         const session=await c.auth.getSession();
@@ -70,6 +91,22 @@ export default function MemberProfile() {
     void connect();
     return()=>{cancelled=true;unsubscribe();};
   },[]);
+
+  useEffect(()=>{
+    if(!client || !profile || profile.own_profile)return;
+    let cancelled=false;
+    setHistoryLoading(true);setHistoryError("");
+    Promise.all([
+      memberRows<MemberReservation>(client,'reservations','id,deal_id,quantity,base,commission,received,paid,submitted,method,reference,created_at,deals(title,archived)',profile.id),
+      memberRows<DeliverySubmission>(client,'delivery_submissions','id,reservation_id,member_id,email,payment_name,upc,method,reference,quantity,destination,amazon_otp',profile.id),
+      memberRows<LabelRequest>(client,'label_requests','id,reservation_id,member_id,email,contact,origin_zip,box_quantities,box_weights,quantity,status',profile.id),
+    ]).then(([r,s,l])=>{
+      if(cancelled)return;
+      setReservations(r.sort((a,b)=>b.created_at.localeCompare(a.created_at)));setSubmissions(s);setLabels(l);
+    }).catch(()=>{if(!cancelled)setHistoryError('Could not load this member’s reservation history. Refresh to try again.');})
+      .finally(()=>{if(!cancelled)setHistoryLoading(false);});
+    return()=>{cancelled=true;};
+  },[client,profile?.id,profile?.own_profile]);
 
   async function reload(reveal=false){
     if(!client||!profile)return;
@@ -123,6 +160,29 @@ export default function MemberProfile() {
           <h2>Payment methods</h2>{!Object.keys(profile.payment_methods).length && <p>Not provided</p>}
           {Object.entries(profile.payment_methods).map(([methodName,details])=><section key={methodName}><h3>{paymentNames[methodName as PaymentMethod]}</h3><dl className={styles.details}>{Object.entries(details).map(([key,value])=><div className={styles.detailPair} key={key}><dt>{fieldNames[key]||key}</dt><dd>{key==='account_last4'?`•••• ${value}`:value}</dd></div>)}</dl></section>)}
           {profile.payment_methods.bank && <button type="button" className="primary" disabled={busy} onClick={revealBank}>{bank.account_number?"Hide bank details":"Show bank details"}</button>}
+          <section aria-labelledby="member-reservations">
+            <h2 id="member-reservations">Reservation history</h2>
+            <p className={styles.description}>Deals reserved by this member, including delivery and recorded payout progress.</p>
+            {historyLoading ? <p role="status">Loading reservations…</p> : historyError ? <p role="alert" className="error">{historyError}</p> : !reservations.length ? <p className={styles.description}>This member has no reservations yet.</p> : <div className={styles.reservationList}>
+              {reservations.map(r=>{
+                const entries=submissions.filter(s=>s.reservation_id===r.id), label=labels.find(l=>l.reservation_id===r.id);
+                const awaiting=(r.received-r.paid)*(r.base+r.commission);
+                return <article className={styles.reservation} key={r.id}>
+                  <div className={styles.reservationHeading}><h3>{r.deals?.title || "Deal unavailable"}</h3><span>{r.deals?.archived ? "Deleted deal" : "Reservation"}</span></div>
+                  <p className={styles.description}>Reserved {new Date(r.created_at).toLocaleDateString()} · {r.id.slice(0,8).toUpperCase()}</p>
+                  <dl className={styles.reservationStats}>
+                    <div><dt>Reserved</dt><dd>{r.quantity} units</dd></div><div><dt>Received</dt><dd>{r.received} / {r.quantity}</dd></div>
+                    <div><dt>Paid</dt><dd>{r.paid} / {r.quantity} units</dd></div><div><dt>Awaiting payout</dt><dd>{money(awaiting)}</dd></div>
+                    <div><dt>Saved payout / unit</dt><dd>{money(r.base+r.commission)}</dd></div><div><dt>Total reservation payout</dt><dd>{money(r.quantity*(r.base+r.commission))}</dd></div>
+                  </dl>
+                  <p><strong>Delivery:</strong> {r.submitted ? r.method : "Awaiting member details"}</p>
+                  {r.submitted && !entries.length && <p className={styles.description}>Previous delivery reference: {r.reference}</p>}
+                  {entries.map(s=><details className={styles.submission} key={s.id}><summary>UPC {s.upc} · {s.quantity} units</summary><p>Payment name: {s.payment_name}<br />Destination: {s.destination}<br />Tracking / drop-off: {s.reference}{s.amazon_otp && <><br />Amazon delivery OTP: {s.amazon_otp}</>}</p></details>)}
+                  {label && <details className={styles.submission}><summary>Label request · {label.status.replace('_',' ')}</summary><p>Contact: {label.contact}<br />Origin ZIP: {label.origin_zip}<br />{label.box_quantities.map((q,i)=>`Box ${i+1}: ${q} units, ${label.box_weights[i]} lb`).join(' · ')}</p></details>}
+                </article>;
+              })}
+            </div>}
+          </section>
         </> : <form key={revision} onSubmit={save} autoComplete="off">
           <label>Full name<input name="full_name" maxLength={120} defaultValue={profile.full_name} autoComplete="name" required /></label>
           <label>Email<input type="email" value={profile.email} readOnly /></label>
