@@ -49,7 +49,17 @@ export default function Workspace({ signup = false }: { signup?: boolean }) {
       setLoading(false);
       return;
     }
-    const type = new URLSearchParams(window.location.hash.slice(1)).get("type");
+    const callback = new URLSearchParams(window.location.hash.slice(1));
+    const type = callback.get("type");
+    if (callback.has("error")) {
+      setError(
+        callback.get("error_code") === "otp_expired"
+          ? "This email link has expired or was already used. Request a new link and try again."
+          : "Sign-in was cancelled or could not be completed. Please try again.",
+      );
+      // Remove failed callback parameters so a reload does not repeat them.
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
     setPasswordSetup(type === "invite" || type === "recovery");
     let cancelled = false;
     const {
@@ -185,6 +195,24 @@ export default function Workspace({ signup = false }: { signup?: boolean }) {
     }
   }
 
+  async function signInWithGoogle() {
+    if (!client || pending) return;
+    setPending(true);
+    setError("");
+    setMessage("");
+    try {
+      const { error } = await client.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.origin },
+      });
+      if (error) throw error;
+    } catch {
+      setError("Could not start Google sign-in. Please try again or sign in with email.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   async function resetPassword(e: React.MouseEvent<HTMLButtonElement>) {
     const form = e.currentTarget.form;
     if (!client || !form || pending) return;
@@ -313,6 +341,20 @@ export default function Workspace({ signup = false }: { signup?: boolean }) {
                   ? "Create your account, confirm your email, and wait for administrator approval before accessing the group."
                   : "Sign in with your Mobius email and password."}
             </p>
+            {!passwordSetup && (
+              <>
+                <button type="button" className="google-auth" disabled={pending} onClick={signInWithGoogle}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-1.99 3.02v2.51h3.23c1.89-1.74 2.98-4.3 2.98-7.36Z" />
+                    <path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.62-2.41l-3.23-2.51c-.9.6-2.05.96-3.39.96-2.6 0-4.8-1.75-5.59-4.1H3.07v2.59A10 10 0 0 0 12 22Z" />
+                    <path fill="#FBBC05" d="M6.41 13.94a6 6 0 0 1 0-3.88V7.47H3.07a10 10 0 0 0 0 9.06l3.34-2.59Z" />
+                    <path fill="#EA4335" d="M12 5.96c1.47 0 2.79.51 3.82 1.51l2.87-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.93 5.47l3.34 2.59C7.2 7.71 9.4 5.96 12 5.96Z" />
+                  </svg>
+                  Continue with Google
+                </button>
+                <div className="auth-divider"><span>or use email</span></div>
+              </>
+            )}
             <form onSubmit={authenticate}>
               {!passwordSetup && (
                 <label>

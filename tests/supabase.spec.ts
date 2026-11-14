@@ -177,6 +177,28 @@ test('disabled signup shows an error instead of a false confirmation',async({pag
   await expect(page.getByRole('heading',{name:'Check your email'})).toHaveCount(0);
 });
 
+test('Google sign-in starts from both auth screens and cancelled callbacks allow retry',async({page})=>{
+  let attempts=0;
+  await page.route('**/auth/v1/authorize?**',route=>{
+    const url=new URL(route.request().url());
+    expect(url.searchParams.get('provider')).toBe('google');
+    expect(url.searchParams.get('redirect_to')).toBe('http://127.0.0.1:3101');
+    attempts++;
+    // Google credentials are not used in local tests. Simulate the provider's
+    // cancellation redirect to verify the real browser/SDK callback handling.
+    return route.fulfill({status:302,headers:{location:'http://127.0.0.1:3101/#error=access_denied&error_description=User+cancelled'}});
+  });
+  for (const path of ['/workspace','/join']) {
+    await page.goto(path);
+    await page.getByRole('button',{name:'Continue with Google',exact:true}).click();
+    await expect(page).toHaveURL('http://127.0.0.1:3101/workspace');
+    await expect(page.locator('.auth-card [role=alert]')).toContainText('Sign-in was cancelled or could not be completed');
+    await expect(page.getByRole('button',{name:'Continue with Google',exact:true})).toBeEnabled();
+    await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();
+  }
+  expect(attempts).toBe(2);
+});
+
 test('invitation links let a new member set their password without granting membership',async({page})=>{
   const email=`invited-${run}@example.test`;
   const generated=await service.auth.admin.generateLink({type:'invite',email});

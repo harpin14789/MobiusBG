@@ -46,6 +46,38 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.google-auth {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 13px 18px;
+  margin-top: 22px;
+  border: 1px solid #cbd5cf;
+  border-radius: 7px;
+  background: white;
+  font-weight: 600;
+}
+.google-auth:hover:not(:disabled) {
+  background: #f3f6f4;
+  border-color: #8ca595;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  color: #74847b;
+  font-size: 11px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
 .live-note {
   font-size: 11px;
   color: var(--muted);

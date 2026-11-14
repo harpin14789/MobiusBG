@@ -17,6 +17,7 @@ For a production build, run `npm run build` then `npm start`. Use `npm run typec
 
 - Public landing page at `/` with membership inquiries, FAQs, and member sign-in at `/workspace`. Existing root invitation and recovery callbacks are forwarded with their authentication parameters preserved. Explicit local demo mode retains its dashboard at `/`.
 - Email signup at `/join`, email confirmation, and administrator approval in **Members**. Accounts cannot grant themselves access. Production signup requires configured [email delivery](docs/email-delivery.md); SMTP credentials are stored only in Supabase.
+- [Google sign-in](docs/google-sign-in.md) on both auth screens, using the same administrator approval rules. Google provider credentials are configured only in Supabase.
 
 - Admin preview: post deals with product links, deadlines, quantities, delivery instructions, base payouts, and optional commissions.
 - Member preview: browse/search deals and reserve available quantities.
