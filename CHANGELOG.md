@@ -53,3 +53,5 @@ This history summarizes work represented in the repository; it does not claim th
 ## Member region foundation (in development)
 
 - Added an optional saved member profile region, with database access checks. Regional commitment caps and reservation-region snapshots are not implemented yet.
+
+- Added a super-admin CSV download of received, unpaid units with member, deal, saved per-unit payout, and amount due. Pending-payment adjustments remain future work.

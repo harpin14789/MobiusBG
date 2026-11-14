@@ -758,6 +758,14 @@ test('real browser login, reservation, delivery, and admin receipt/payment workf
   await adminRow.getByRole('button',{name:'Mark received'}).click();
   await expect(adminRow).toContainText('1 / 2');
   await adminPage.getByRole('button',{name:'Payouts',exact:true}).click();
+  await adminPage.getByLabel('Search group reservations').fill(title);
+  const downloadEvent=adminPage.waitForEvent('download');
+  await adminPage.getByRole('button',{name:'Download pending payments CSV'}).click();
+  const download=await downloadEvent;
+  const csv=readFileSync((await download.path())!,'utf8');
+  expect(csv).toContain(title);
+  expect(csv).toContain(emails.member);
+  expect(csv).toContain('315.00');
   await adminRow.getByLabel(`Total paid units for ${title}`).fill('1');
   await adminRow.getByRole('button',{name:'Record paid'}).click();
   await expect(adminRow).toContainText('$315.00 paid');

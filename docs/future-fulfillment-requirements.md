@@ -18,7 +18,7 @@ These are requirements supplied by the co-founder for a future replacement of th
 ## Payouts and invoices
 
 - The super admin can adjust an individual's payout while it is pending, for example to compensate for boxes. Allow both per-unit and separate dollar adjustments; define how they apply to partial receipts and how the member is informed. Preserve history and prevent retroactive changes to amounts already paid.
-- Generate a list of amounts awaiting payment, including member, item, quantity, payout price, and total; define filters and export format.
+- The super-admin Payouts view now offers a CSV export of filtered received, unpaid units, including member, item, quantity, saved per-unit price, and amount due. Pending-payment adjustments are not yet implemented or included.
 - Defer invoice generation until after the other functionality. Revisit the invoice recipient, issuer, format, and treatment of adjustments with the owner later.
 - Potential later feature: an ACH batch file for US Bank. Obtain the bank's current specifications and security requirements before design or implementation. Handle bank details and generated files as sensitive data; this is not currently a payment-processing feature.
 

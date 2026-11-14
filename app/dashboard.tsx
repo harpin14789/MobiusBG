@@ -563,6 +563,30 @@ export default function Dashboard({
 
   const visibleReservations = state.reservations.filter(r => (tab !== "Deliveries" || r.submitted) && (tab !== "Payouts" || r.quantity>0) && (!superAdmin ||
     `${state.deals.find(d=>d.id===r.dealId)?.title} ${r.memberEmail || ""} ${members.find(m=>m.id===r.memberId)?.full_name || ""} ${r.reference}`.toLowerCase().includes(reservationSearch.toLowerCase())));
+  function exportPendingPayments() {
+    if (!superAdmin) return;
+    // Prefix formula-like text so opening the CSV cannot execute member-supplied content.
+    const cell = (value: string | number) => {
+      const raw = String(value);
+      const safe = /^[\s\x00-\x1f]*[=+@\-]/.test(raw) ? "'" + raw : raw;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
+    const lines = [["Member name", "Member email", "Deal", "Reservation", "Unpaid received units", "Payout per unit (USD)", "Amount due (USD)"]];
+    for (const reservation of visibleReservations) {
+      const units = reservation.received - reservation.paid;
+      if (units <= 0) continue;
+      const deal = state.deals.find(item => item.id === reservation.dealId);
+      const name = members.find(member => member.id === reservation.memberId)?.full_name || "";
+      lines.push([name, reservation.memberEmail || "", deal?.title || "Unavailable deal", reservation.id,
+        String(units), ((reservation.base + reservation.commission) / 100).toFixed(2),
+        (units * (reservation.base + reservation.commission) / 100).toFixed(2)]);
+    }
+    const blob = new Blob([lines.map(row => row.map(cell).join(",")).join("\r\n") + "\r\n"], {type:"text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = "mobius-pending-payments.csv"; anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   const reservationGroups = state.deals.map(deal => ({deal, entries: state.reservations.filter(r=>r.dealId===deal.id && r.quantity>0)}))
     .filter(group => group.entries.length && `${group.deal.title} ${group.entries.map(r=>r.memberEmail || "").join(" ")}`.toLowerCase().includes(reservationSearch.toLowerCase()));
   const groupReservations = <div className="table-wrap"><table><thead><tr><th>Deal</th><th>Reserved / capacity</th><th>Members</th><th>Received</th><th>Unpaid received units</th><th>Details</th></tr></thead><tbody>
@@ -1124,6 +1148,7 @@ export default function Dashboard({
                   </div>
                 </section>
                 {superAdmin && <label>Search group reservations<input value={reservationSearch} onChange={e=>setReservationSearch(e.target.value)} placeholder="Deal, member name, email, or reference" /></label>}
+                {superAdmin && tab === "Payouts" && <button className="small-button" type="button" onClick={exportPendingPayments}>Download pending payments CSV</button>}
                 {reservations}
               </>
             )

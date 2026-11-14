@@ -55,3 +55,5 @@ Every developer and AI coding assistant, regardless of model or tool, working on
 - Shared documentation instructions apply to developers and AI coding assistants using any model or tool. Update the handoff and changelog together with development work. This documentation update changes no application behavior or service configuration.
 
 - Member profile region foundation: migration `20261114001200_member_regions.sql` and profile UI add an optional West/Central/East region. The migration was applied to the hosted database; it does not yet enforce regional caps or snapshot existing reservation regions. Local profile permissions and browser tests passed.
+
+- Super-admin Payouts includes a CSV download of filtered, received-but-unpaid units using saved reservation rates. This report does not yet include pending-payment adjustments; those remain unimplemented.
