@@ -46,6 +46,15 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.submission-details { margin-top: 10px; min-width: 190px; }
+.submission-details summary { cursor: pointer; font-size: 11px; color: var(--green); }
+.submission-record { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.submission-record small { overflow-wrap: anywhere; white-space: normal; }
+.label-request-action { margin-top: 10px; }
+.label-request-action small { display: block; margin-bottom: 6px; }
+.label-offer { color: var(--green); font-size: 11px; padding: 8px 0; }
+.checkbox-label { display: flex; flex-direction: row; align-items: center; gap: 10px; }
+.checkbox-label input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 auto; }
 .google-auth {
   display: flex;
   width: 100%;

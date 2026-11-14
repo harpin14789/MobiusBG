@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import {
   Deal,
+  DeliverySubmission,
+  LabelRequest,
   Reservation,
   State,
   STORAGE_KEY,
@@ -32,6 +34,7 @@ import {
 } from "../lib/store";
 import { loadWorkspace, postDeal, rpc, type Profile } from "../lib/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { DeliveryForm, LabelRequestForm } from "./submission-forms";
 
 type Tab =
   | "Overview"
@@ -39,7 +42,8 @@ type Tab =
   | "My reservations"
   | "Deliveries"
   | "Payouts"
-  | "Members";
+  | "Members"
+  | "Label requests";
 const nav = [
   { name: "Overview", icon: LayoutDashboard },
   { name: "Deals", icon: ShoppingBag },
@@ -103,14 +107,20 @@ export default function Dashboard({
   const busyRef = useRef(false);
   const reservationRequest = useRef("");
   const [loaded, setLoaded] = useState(false);
-  const [tab, setTab] = useState<Tab>("Overview");
+  const postingOnly = live && account.role === "admin";
+  const [tab, setTab] = useState<Tab>(postingOnly ? "Deals" : "Overview");
   const [demoAdmin, setAdmin] = useState(false);
-  const admin = live ? account.role === "admin" : demoAdmin;
+  const superAdmin = live && account.role === "super_admin";
+  const admin = live ? superAdmin : demoAdmin;
+  const canPostDeals = admin || postingOnly;
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All deals");
   const [notice, setNotice] = useState("");
   const [reserveDeal, setReserveDeal] = useState<Deal | null>(null);
   const [delivery, setDelivery] = useState<Reservation | null>(null);
+  const [editingSubmission, setEditingSubmission] = useState<DeliverySubmission | null>(null);
+  const [labelReservation, setLabelReservation] = useState<Reservation | null>(null);
+  const [labelsOffered, setLabelsOffered] = useState(false);
   const [create, setCreate] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState("");
@@ -322,6 +332,7 @@ export default function Dashboard({
       capacity,
       deadline: String(form.get("deadline")),
       instructions: String(form.get("instructions")).trim(),
+      label_min_quantity: labelsOffered ? Number(form.get("label_min_quantity")) : null,
     };
     const saved = client
       ? await changeCloud(() => postDeal(client, deal))
@@ -342,26 +353,79 @@ export default function Dashboard({
     const form = new FormData(e.currentTarget);
     const method = String(form.get("method")),
       reference = String(form.get("reference")).trim();
+    if (!delivery) return;
+    const fields = {
+      payment_name: String(form.get("payment_name")).trim(),
+      upc: String(form.get("upc")).trim(),
+      quantity: Number(form.get("delivery_quantity")),
+      destination: String(form.get("destination_choice")) === "Other"
+        ? String(form.get("destination_other")).trim() : String(form.get("destination_choice")),
+      amazon_otp: String(form.get("amazon_otp") || "").trim(),
+    };
+    const submitted = (delivery.submissions || []).filter(s => s.id !== editingSubmission?.id);
+    if (!Number.isSafeInteger(fields.quantity) || fields.quantity < 1 ||
+      submitted.reduce((n,s) => n+s.quantity,0) + fields.quantity > delivery.quantity ||
+      submitted.reduce((n,s) => n+s.quantity,0) + fields.quantity < delivery.received) {
+      setError("Submitted quantities must fit your reservation and cannot be below received units."); return;
+    }
+    const submission: DeliverySubmission = {
+      ...fields, id: editingSubmission?.id || crypto.randomUUID(),
+      reservation_id: delivery.id, member_id: account?.id || "demo",
+      email: delivery.memberEmail || account?.email || "demo@example.test", method, reference,
+    };
     const saved = client
       ? await changeCloud(() =>
-          rpc(client, "submit_delivery", {
-            p_id: delivery?.id,
+          rpc(client, "save_delivery_submission", {
+            p_reservation_id: delivery.id,
+            p_submission_id: editingSubmission?.id || null,
+            p_payment_name: fields.payment_name, p_upc: fields.upc,
             p_method: method,
             p_reference: reference,
+            p_quantity: fields.quantity, p_destination: fields.destination,
+            p_amazon_otp: fields.amazon_otp,
           }),
         )
       : update((s) => ({
           ...s,
           reservations: s.reservations.map((r) =>
             r.id === delivery?.id
-              ? { ...r, method, reference, submitted: true }
+              ? { ...r, method, reference, submitted: true, submissions: [...submitted, submission] }
               : r,
           ),
         }));
     if (saved) {
       setDelivery(null);
+      setEditingSubmission(null);
       setNotice("Delivery details submitted. Receipt confirmation is pending.");
     }
+  }
+
+  async function submitLabelRequest(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!labelReservation) return;
+    const form = new FormData(e.currentTarget);
+    const quantities = String(form.get("box_quantities")).split(/[\/,]/).map(v => Number(v.trim()));
+    const weights = String(form.get("box_weights")).split(/[\/,]/).map(v => Number(v.trim().replace(/\s*lbs?$/i,"")));
+    const total = quantities.reduce((n,q) => n+q,0);
+    const deal = state.deals.find(d => d.id === labelReservation.dealId)!;
+    if (!deal.label_min_quantity || !quantities.length || quantities.length !== weights.length ||
+      quantities.some(q => !Number.isSafeInteger(q) || q<1) ||
+      weights.some(w => !Number.isFinite(w) || w<=0 || w>10000) ||
+      total < deal.label_min_quantity || total > labelReservation.quantity) {
+      setError("Enter matching quantities and positive pound weights for each box. The total must meet the label minimum and fit your reservation."); return;
+    }
+    const request: LabelRequest = {
+      id: labelReservation.labelRequest?.id || crypto.randomUUID(), reservation_id: labelReservation.id,
+      member_id: labelReservation.memberId || account?.id || "demo",
+      email: labelReservation.memberEmail || account?.email || "demo@example.test",
+      contact: String(form.get("contact")).trim(), origin_zip: String(form.get("origin_zip")).trim(),
+      box_quantities: quantities, box_weights: weights, quantity: total, status: "requested",
+    };
+    const saved = client ? await changeCloud(() => rpc(client, "save_label_request", {
+      p_reservation_id: labelReservation.id, p_contact: request.contact, p_origin_zip: request.origin_zip,
+      p_box_quantities: quantities, p_box_weights: weights,
+    })) : update(s => ({...s, reservations: s.reservations.map(r => r.id===labelReservation.id ? {...r,labelRequest:request} : r)}));
+    if (saved) { setLabelReservation(null); setNotice("Shipping label request saved. The super admin will prepare labels and contact you."); }
   }
 
   async function record(
@@ -451,6 +515,11 @@ export default function Dashboard({
                     <>
                       <span className="badge blue">{r.method}</span>
                       <small>{r.reference}</small>
+                      {!!r.submissions?.length && <details className="submission-details"><summary>{r.submissions.length} item submission{r.submissions.length === 1 ? "" : "s"}</summary>{r.submissions.map(s => <div className="submission-record" key={s.id}>
+                        <strong>UPC {s.upc} · {s.quantity} units</strong>
+                        <small>{s.email}<br />Payment name: {s.payment_name}<br />Destination: {s.destination}<br />{s.reference}{s.amazon_otp && <><br />Amazon delivery OTP: {s.amazon_otp}</>}</small>
+                        <button className="text-button" onClick={() => {setDelivery(r);setEditingSubmission(s);setError("");}}>Edit UPC {s.upc}</button>
+                      </div>)}</details>}
                     </>
                   ) : (
                     <span className="badge amber">Awaiting details</span>
@@ -507,12 +576,18 @@ export default function Dashboard({
                       className="small-button"
                       onClick={() => {
                         setDelivery(r);
+                        setEditingSubmission(r.submissions?.[0] || null);
                         setError("");
                       }}
                     >
                       {r.submitted ? "Edit delivery" : "Add delivery"}
                     </button>
                   )}
+                  {!postingOnly && !!r.submissions?.length && r.submissions.reduce((n,s)=>n+s.quantity,0)<r.quantity && <button className="small-button" onClick={() => {setDelivery(r);setEditingSubmission(null);setError("");}}>Add another UPC</button>}
+                  {deal.label_min_quantity && !postingOnly && <div className="label-request-action">
+                    {r.labelRequest && <small>Label request: {r.labelRequest.status.replace("_"," ")}</small>}
+                    {r.quantity >= deal.label_min_quantity && (!r.labelRequest || r.labelRequest.status === "requested") ? <button className="small-button" onClick={() => {setLabelReservation(r);setError("");}}>{r.labelRequest ? "Edit label request" : "Request shipping label"}</button> : !r.labelRequest && <small>Prepaid label minimum: {deal.label_min_quantity} units</small>}
+                  </div>}
                 </td>
               </tr>
             );
@@ -555,9 +630,9 @@ export default function Dashboard({
         <div className="nav-label">WORKSPACE</div>
         <nav>
           {[
-            ...nav,
-            ...(live && admin
-              ? [{ name: "Members" as const, icon: Users }]
+            ...nav.filter((item) => !postingOnly || item.name === "Deals"),
+            ...(superAdmin
+              ? [{ name: "Members" as const, icon: Users }, { name: "Label requests" as const, icon: Truck }]
               : []),
           ].map(({ name, icon: Icon }) => (
             <button
@@ -596,9 +671,9 @@ export default function Dashboard({
               </strong>
               <small>
                 {live
-                  ? admin
-                    ? "Administrator"
-                    : "Member"
+                  ? superAdmin
+                    ? "Super administrator"
+                    : postingOnly ? "Admin · Deal posting" : "Member"
                   : "Local demo account"}
               </small>
             </div>
@@ -656,11 +731,12 @@ export default function Dashboard({
                         : "Your commitments and locked-in payout terms, all in one place."}
               </p>
             </div>
-            {admin ? (
+            {canPostDeals ? (
               <button
                 className="primary"
                 onClick={() => {
                   setCreate(true);
+                  setLabelsOffered(false);
                   setError("");
                 }}
               >
@@ -865,6 +941,7 @@ export default function Dashboard({
                             ? ` + ${money(d.commission)} commission`
                             : " · No additional commission"}
                         </p>
+                        {!!d.label_min_quantity && <p className="label-offer">Prepaid shipping labels · minimum {d.label_min_quantity} units</p>}
                         <div className="capacity-label">
                           <span>
                             <strong>{left}</strong> of {d.capacity} spots left
@@ -882,7 +959,7 @@ export default function Dashboard({
                           <a href={d.url} target="_blank" rel="noreferrer">
                             Retailer <ExternalLink size={13} />
                           </a>
-                          <button
+                          {!postingOnly && <button
                             disabled={busy || !loaded || !available}
                             className="reserve-button"
                             onClick={() => {
@@ -894,7 +971,7 @@ export default function Dashboard({
                           >
                             {available ? "Reserve units" : "Unavailable"}
                             <ArrowRight size={15} />
-                          </button>
+                          </button>}
                         </div>
                       </div>
                     </article>
@@ -928,7 +1005,7 @@ export default function Dashboard({
             </>
           ) : (
             tab !== "Deals" &&
-            tab !== "Members" && (
+            tab !== "Members" && tab !== "Label requests" && (
               <>
                 <section className="section-heading">
                   <div>
@@ -952,13 +1029,16 @@ export default function Dashboard({
               </>
             )
           )}
-          {tab === "Members" && admin && live && (
+          {tab === "Members" && superAdmin && live && (
             <section className="members-section">
               <h2>Group members</h2>
               <p>
                 New members create an account at /join and confirm their email.
                 Approve their membership here when you’re ready to give them
-                access. You can deactivate membership at any time.
+                access. Assign Admin to let someone post deals only. Delivery
+                and payment records stay restricted to the super admin and
+                each regular member’s own records. Only super admins can approve
+                membership or change roles; role changes do not activate an account.
               </p>
               <div className="table-wrap">
                 <table>
@@ -974,10 +1054,28 @@ export default function Dashboard({
                     {members.map((m) => (
                       <tr key={m.id}>
                         <td>{m.email}</td>
-                        <td>{m.role}</td>
+                        <td>
+                          {m.role === "super_admin" ? "Super admin (protected)" : (
+                            <select
+                              aria-label={`Role for ${m.email}`}
+                              value={m.role}
+                              disabled={busy}
+                              onChange={(event) => {
+                                const role = event.target.value;
+                                void changeCloud(() => rpc(client!, "set_member_role", {
+                                  p_id: m.id,
+                                  p_role: role,
+                                }));
+                              }}
+                            >
+                              <option value="member">Member</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          )}
+                        </td>
                         <td>{m.active ? "Active" : "Awaiting approval"}</td>
                         <td>
-                          {m.role === "member" && (
+                          {m.role !== "super_admin" && (
                             <button
                               disabled={busy}
                               className="small-button"
@@ -1001,6 +1099,19 @@ export default function Dashboard({
               </div>
             </section>
           )}
+          {tab === "Label requests" && superAdmin && live && <section className="members-section">
+            <h2>Shipping label requests</h2><p>Prepare carrier labels separately, combine boxes as appropriate, and contact the member using the details below. Posting-only admins cannot see these requests.</p>
+            <div className="table-wrap"><table><thead><tr><th>Member / item</th><th>Contact / origin</th><th>Boxes</th><th>Status</th></tr></thead><tbody>
+              {state.reservations.filter(r => r.labelRequest).map(r => {
+                const request=r.labelRequest!;
+                return <tr key={request.id}><td><strong>{state.deals.find(d=>d.id===r.dealId)?.title}</strong><small>{request.email}<br />{request.quantity} total units</small></td>
+                  <td>{request.contact}<small>Ships from ZIP {request.origin_zip}</small></td>
+                  <td>{request.box_quantities.map((q,i)=><small key={i}>Box {i+1}: {q} units · {request.box_weights[i]} lb</small>)}</td>
+                  <td><select aria-label={`Label status for ${request.email}`} value={request.status} disabled={busy} onChange={e=>{const status=e.target.value;void changeCloud(()=>rpc(client!,"set_label_request_status",{p_id:request.id,p_status:status}));}}><option value="requested">Requested</option><option value="in_progress">In progress</option><option value="completed">Completed</option></select></td></tr>;
+              })}
+            </tbody></table></div>
+            {!state.reservations.some(r=>r.labelRequest) && <p>No shipping label requests yet.</p>}
+          </section>}
           <footer>
             Made for the way your group buys.
             <span>
@@ -1067,48 +1178,12 @@ export default function Dashboard({
       )}
       {delivery && (
         <Modal title="Delivery details" close={() => setDelivery(null)}>
-          <form onSubmit={submitDelivery}>
-            <p className="form-help">
-              {state.deals.find((d) => d.id === delivery.dealId)?.title} ·{" "}
-              {delivery.quantity} units
-            </p>
-            <label>
-              Delivery method
-              <select
-                name="method"
-                defaultValue={delivery.method || "Ship to warehouse"}
-              >
-                <option>Ship to warehouse</option>
-                <option>Local drop-off</option>
-                <option>Admin-provided label</option>
-              </select>
-            </label>
-            <label>
-              Tracking number or drop-off reference
-              <input
-                name="reference"
-                defaultValue={delivery.reference}
-                placeholder="Tracking number or location and date"
-                maxLength={300}
-                required
-              />
-            </label>
-            <p className="form-help">
-              Request warehouse addresses and prepaid labels from the admin in
-              WhatsApp. This demo records delivery details; it does not generate
-              labels.
-            </p>
-            {error && (
-              <p role="alert" className="error">
-                {error}
-              </p>
-            )}
-            <button disabled={busy} className="primary full">
-              Save delivery details <Check size={16} />
-            </button>
-          </form>
+          <DeliveryForm key={editingSubmission?.id || "new"} reservation={delivery} submission={editingSubmission} deal={state.deals.find(d=>d.id===delivery.dealId)!} email={delivery.memberEmail || account?.email || "demo@example.test"} busy={busy} error={error} onSubmit={submitDelivery} />
         </Modal>
       )}
+      {labelReservation && <Modal title="Request a shipping label" close={()=>setLabelReservation(null)}>
+        <LabelRequestForm reservation={labelReservation} request={labelReservation.labelRequest || null} deal={state.deals.find(d=>d.id===labelReservation.dealId)!} email={labelReservation.memberEmail || account?.email || "demo@example.test"} busy={busy} error={error} onSubmit={submitLabelRequest} />
+      </Modal>}
       {create && (
         <Modal title="Post a new deal" close={() => setCreate(false)}>
           <form onSubmit={createDeal}>
@@ -1189,6 +1264,8 @@ export default function Dashboard({
                 placeholder="Eligible models, warehouse / drop-off instructions…"
               />
             </label>
+            <label className="checkbox-label"><input type="checkbox" name="labels_offered" checked={labelsOffered} onChange={e=>setLabelsOffered(e.target.checked)} />Prepaid shipping labels available</label>
+            {labelsOffered && <label>Minimum units for a shipping label<input name="label_min_quantity" type="number" min={1} step={1} defaultValue={1} required /></label>}
             {error && (
               <p role="alert" className="error">
                 {error}

@@ -13,7 +13,7 @@ let admin:SupabaseClient,member:SupabaseClient,other:SupabaseClient,pending:Supa
 let memberId:string;
 const emails={admin:`admin-${run}@example.test`,member:`member-${run}@example.test`,other:`other-${run}@example.test`,pending:`pending-${run}@example.test`};
 
-async function user(email:string,role:'admin'|'member',active:boolean){
+async function user(email:string,role:'admin'|'member'|'super_admin',active:boolean){
   const {data,error}=await service.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{role:'admin',active:true}});
   expect(error).toBeNull();
   const id=data.user!.id;
@@ -38,7 +38,7 @@ async function reserve(client:SupabaseClient,dealId:string,quantity=1,id=randomU
 }
 
 test.beforeAll(async()=>{
-  admin=(await user(emails.admin,'admin',true)).client;
+  admin=(await user(emails.admin,'super_admin',true)).client;
   const m=await user(emails.member,'member',true);member=m.client;memberId=m.id;
   other=(await user(emails.other,'member',true)).client;
   pending=(await user(emails.pending,'member',false)).client;
@@ -199,6 +199,144 @@ test('Google sign-in starts from both auth screens and cancelled callbacks allow
   expect(attempts).toBe(2);
 });
 
+test('super admin can assign posting-only admins while database blocks all operational access',async({page,browser})=>{
+  const email=`poster-${run}@example.test`;
+  const poster=await user(email,'member',true);
+  await page.goto('/workspace');
+  await page.getByLabel('Email',{exact:true}).fill(emails.admin);
+  await page.getByLabel('Password',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByRole('button',{name:'Members',exact:true}).click();
+  await expect(page.locator('tbody tr').filter({hasText:emails.admin}).getByText('Super admin (protected)',{exact:true})).toBeVisible();
+  await page.getByLabel(`Role for ${email}`,{exact:true}).selectOption('admin');
+  await expect.poll(async()=> (await service.from('profiles').select('role').eq('id',poster.id).single()).data?.role).toBe('admin');
+  const context=await browser.newContext(),staff=await context.newPage();
+  try {
+    await staff.goto('/workspace');
+    await staff.getByLabel('Email',{exact:true}).fill(email);
+    await staff.getByLabel('Password',{exact:true}).fill(password);
+    await staff.getByRole('button',{name:'Sign in',exact:true}).click();
+    await expect(staff.getByRole('button',{name:'Post a deal',exact:true})).toBeVisible();
+    for(const name of ['Members','Deliveries','Payouts','My reservations','Reserve units'])
+      await expect(staff.getByRole('button',{name,exact:true})).toHaveCount(0);
+    const args={p_id:randomUUID(),p_title:`Staff deal ${run}`,p_category:'Laptops',p_retailer:'Test',p_url:'https://example.com',p_base:100,p_commission:0,p_capacity:1,p_deadline:'2099-12-31',p_instructions:'Local test'};
+    expect((await poster.client.rpc('create_deal',args)).error).toBeNull();
+    expect((await poster.client.from('deals').select('id').eq('id',args.p_id)).data).toHaveLength(1);
+    expect((await poster.client.from('reservations').select('*')).data).toEqual([]);
+    expect((await poster.client.from('audit_events').select('*')).data).toEqual([]);
+    expect((await poster.client.from('delivery_submissions').select('*')).data).toEqual([]);
+    expect((await poster.client.from('label_requests').select('*')).data).toEqual([]);
+    expect((await reserve(poster.client,args.p_id)).error).not.toBeNull();
+    expect((await poster.client.rpc('record_units',{p_id:randomUUID(),p_kind:'paid',p_units:1})).error).not.toBeNull();
+    expect((await poster.client.rpc('submit_delivery',{p_id:randomUUID(),p_method:'Local drop-off',p_reference:'forbidden'})).error).not.toBeNull();
+    expect((await poster.client.rpc('set_member_active',{p_id:memberId,p_active:false})).error).not.toBeNull();
+    expect((await poster.client.rpc('set_member_role',{p_id:poster.id,p_role:'super_admin'})).error).not.toBeNull();
+    expect((await poster.client.from('profiles').update({role:'super_admin'}).eq('id',poster.id)).error).not.toBeNull();
+    await page.getByLabel(`Role for ${email}`,{exact:true}).selectOption('member');
+    await expect.poll(async()=> (await service.from('profiles').select('role').eq('id',poster.id).single()).data?.role).toBe('member');
+    expect((await poster.client.rpc('create_deal',{...args,p_id:randomUUID()})).error).not.toBeNull();
+    const own=(await admin.auth.getUser()).data.user!.id;
+    expect((await admin.rpc('set_member_role',{p_id:own,p_role:'member'})).error).not.toBeNull();
+    expect((await admin.rpc('set_member_active',{p_id:own,p_active:false})).error).not.toBeNull();
+    expect((await admin.rpc('set_member_role',{p_id:poster.id,p_role:'super_admin'})).error).not.toBeNull();
+  } finally {await context.close();}
+});
+
+test('approval alert queue requires email verification, protects leases, and skips approved accounts',async()=>{
+  const created=await service.auth.admin.createUser({email:`alert-${run}@example.test`,password,email_confirm:false});
+  expect(created.error).toBeNull();
+  const id=created.data.user!.id;
+  expect((await member.rpc('claim_approval_alerts')).error).not.toBeNull();
+  expect((await publicClient().rpc('claim_approval_alerts')).error).not.toBeNull();
+  let claimed=await service.rpc('claim_approval_alerts');
+  expect(claimed.error).toBeNull();
+  expect(claimed.data.some((r:{member_id:string})=>r.member_id===id)).toBe(false);
+  expect((await service.auth.admin.updateUserById(id,{email_confirm:true})).error).toBeNull();
+  claimed=await service.rpc('claim_approval_alerts');
+  expect(claimed.error).toBeNull();
+  const entry=claimed.data.find((r:{member_id:string})=>r.member_id===id);
+  expect(entry).toBeTruthy();
+  expect((await service.rpc('claim_approval_alerts')).data.some((r:{member_id:string})=>r.member_id===id)).toBe(false);
+  const complete=(lease:string)=>service.rpc('complete_approval_alert',{p_member_id:id,p_lease_token:lease,p_sent:true,p_error:null});
+  expect((await complete(randomUUID())).data).toBe(false);
+  expect((await complete(entry.lease_token)).data).toBe(true);
+  expect((await complete(entry.lease_token)).data).toBe(false);
+  expect((await service.auth.admin.updateUserById(id,{user_metadata:{name:'Updated name'}})).error).toBeNull();
+  expect((await service.rpc('claim_approval_alerts')).data.some((r:{member_id:string})=>r.member_id===id)).toBe(false);
+  const approved=await user(`skip-alert-${run}@example.test`,'member',true);
+  expect((await service.rpc('claim_approval_alerts')).data.some((r:{member_id:string})=>r.member_id===approved.id)).toBe(false);
+});
+
+test('item submissions capture payment and delivery fields, enforce quantity totals, and isolate private data',async()=>{
+  const id=await deal(5);
+  const reservation=(await reserve(member,id,2)).data;
+  const fields={p_reservation_id:reservation,p_submission_id:null,p_payment_name:'Test payment name',p_upc:'195133197656',p_method:'Ship to warehouse',p_reference:'123456789012, 987654321098',p_quantity:1,p_destination:'4 Orchard View Dr',p_amazon_otp:'123456'};
+  const saved=await member.rpc('save_delivery_submission',fields);
+  expect(saved.error).toBeNull();
+  const first=saved.data;
+  const row=await member.from('delivery_submissions').select('*').eq('id',first).single();
+  expect(row.data).toMatchObject({payment_name:fields.p_payment_name,upc:fields.p_upc,reference:fields.p_reference,quantity:1,destination:fields.p_destination,amazon_otp:'123456',email:emails.member});
+  expect((await other.from('delivery_submissions').select('*').eq('id',first)).data).toEqual([]);
+  expect((await other.rpc('save_delivery_submission',{...fields,p_upc:'195133197657'})).error).not.toBeNull();
+  expect((await member.from('delivery_submissions').update({quantity:100}).eq('id',first)).error).not.toBeNull();
+  expect((await member.rpc('save_delivery_submission',fields)).error).not.toBeNull();
+  expect((await member.rpc('save_delivery_submission',{...fields,p_submission_id:first,p_payment_name:''})).error).not.toBeNull();
+  const second=await member.rpc('save_delivery_submission',{...fields,p_upc:'195133197657'});
+  expect(second.error).toBeNull();
+  expect((await member.rpc('save_delivery_submission',{...fields,p_upc:'195133197658'})).error).not.toBeNull();
+  expect((await member.rpc('save_delivery_submission',{...fields,p_submission_id:first,p_quantity:2})).error).not.toBeNull();
+  expect((await admin.from('delivery_submissions').select('id').eq('reservation_id',reservation)).data).toHaveLength(2);
+  const one=(await reserve(member,id,1)).data;
+  const attempts=await Promise.all(['195133197659','195133197660'].map(upc=>member.rpc('save_delivery_submission',{...fields,p_reservation_id:one,p_upc:upc})));
+  expect(attempts.filter(r=>!r.error)).toHaveLength(1);
+  expect(attempts.filter(r=>r.error)).toHaveLength(1);
+});
+
+test('shipping labels enforce deal eligibility and box minimums and can be handled only by the super admin',async({page,browser})=>{
+  const id=randomUUID();
+  const created=await admin.rpc('create_deal_with_labels',{p_id:id,p_title:`Label eligible ${run}`,p_category:'Laptops',p_retailer:'Test',p_url:'https://example.com',p_base:100,p_commission:0,p_capacity:10,p_deadline:'2099-12-31',p_instructions:'Ship from home',p_label_min_quantity:3});
+  expect(created.error).toBeNull();
+  const reservation=(await reserve(member,id,4)).data;
+  const fields={p_reservation_id:reservation,p_contact:'@testmember',p_origin_zip:'60601',p_box_quantities:[2,2],p_box_weights:[25,25]};
+  expect((await member.rpc('save_label_request',{...fields,p_box_quantities:[2],p_box_weights:[25]})).error).not.toBeNull();
+  expect((await member.rpc('save_label_request',{...fields,p_box_quantities:[3,3]})).error).not.toBeNull();
+  expect((await member.rpc('save_label_request',{...fields,p_box_weights:[25]})).error).not.toBeNull();
+  expect((await member.rpc('save_label_request',{...fields,p_box_weights:[-1,25]})).error).not.toBeNull();
+  expect((await other.rpc('save_label_request',fields)).error).not.toBeNull();
+  const noOffer=(await reserve(member,await deal(),3)).data;
+  expect((await member.rpc('save_label_request',{...fields,p_reservation_id:noOffer})).error).not.toBeNull();
+  await page.goto('/workspace');
+  await page.getByLabel('Email',{exact:true}).fill(emails.member);
+  await page.getByLabel('Password',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  const row=page.locator('tbody tr').filter({hasText:`Label eligible ${run}`});
+  await row.getByRole('button',{name:'Request shipping label',exact:true}).click();
+  await page.getByLabel('WhatsApp phone number or Discord tag').fill('@testmember');
+  await page.getByLabel('Shipping-from ZIP code').fill('60601');
+  await page.getByLabel('Quantity breakdown by box').fill('2 / 2');
+  await page.getByLabel('Box weights in pounds').fill('25 lb / 25 lb');
+  await page.getByRole('button',{name:'Submit label request',exact:true}).click();
+  await expect(row).toContainText('Label request: requested');
+  const request=(await member.from('label_requests').select('*').eq('reservation_id',reservation).single()).data!;
+  expect(request).toMatchObject({email:emails.member,contact:'@testmember',origin_zip:'60601',quantity:4,box_quantities:[2,2]});
+  expect((await other.from('label_requests').select('*').eq('id',request.id)).data).toEqual([]);
+  expect((await member.rpc('set_label_request_status',{p_id:request.id,p_status:'completed'})).error).not.toBeNull();
+  const context=await browser.newContext(),owner=await context.newPage();
+  try {
+    await owner.goto('/workspace');
+    await owner.getByLabel('Email',{exact:true}).fill(emails.admin);
+    await owner.getByLabel('Password',{exact:true}).fill(password);
+    await owner.getByRole('button',{name:'Sign in',exact:true}).click();
+    await owner.getByRole('button',{name:'Label requests',exact:true}).click();
+    const labelRow=owner.locator('tbody tr').filter({hasText:`Label eligible ${run}`});
+    await expect(labelRow).toContainText('@testmember');
+    await expect(labelRow).toContainText('60601');
+    await labelRow.getByLabel(`Label status for ${emails.member}`).selectOption('in_progress');
+    await expect.poll(async()=> (await member.from('label_requests').select('status').eq('id',request.id).single()).data?.status).toBe('in_progress');
+    expect((await member.rpc('save_label_request',fields)).error).not.toBeNull();
+  } finally {await context.close();}
+});
+
 test('invitation links let a new member set their password without granting membership',async({page})=>{
   const email=`invited-${run}@example.test`;
   const generated=await service.auth.admin.generateLink({type:'invite',email});
@@ -232,6 +370,9 @@ test('real browser login, reservation, delivery, and admin receipt/payment workf
   const row=page.locator('tbody tr').filter({hasText:title});
   await row.getByRole('button',{name:'Add delivery'}).click();
   await page.getByLabel('Delivery method').selectOption('Local drop-off');
+  await page.getByLabel('Name on payment account').fill('Test Member');
+  await page.getByLabel('Product UPC',{exact:true}).fill('195133197656');
+  await page.getByLabel('Destination address',{exact:true}).selectOption('Blue Ocean Dropoff');
   await page.getByLabel('Tracking number or drop-off reference').fill('Test warehouse');
   await page.getByRole('button',{name:'Save delivery details'}).click();
   await expect(row).toContainText('Test warehouse');

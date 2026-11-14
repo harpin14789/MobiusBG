@@ -18,6 +18,9 @@ test("reserve, submit delivery, receive partial quantity, and record payment", a
   await expect(page.locator("tbody tr")).toContainText("2 units");
   await page.getByRole("button", { name: "Add delivery" }).click();
   await page.getByLabel("Delivery method").selectOption("Local drop-off");
+  await page.getByLabel('Name on payment account').fill('Test Member');
+  await page.getByLabel('Product UPC',{exact:true}).fill('195133197656');
+  await page.getByLabel('Destination address',{exact:true}).selectOption('Blue Ocean Dropoff');
   await page
     .getByLabel("Tracking number or drop-off reference")
     .fill("North warehouse, Nov 15");

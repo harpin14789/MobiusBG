@@ -30,7 +30,7 @@ Mobius supports an authenticated Supabase workspace and a separately enabled bro
 - Node.js 24 diagnostic scripts need `NODE_USE_ENV_PROXY=1` to use the supplied proxy. With it, the installed Supabase JavaScript client reaches the hosted API and receives the expected anonymous-access denial. Direct Node requests fail in this environment. Preserve the supplied proxy and CA variables.
 - `npm run build` passes, and the production page displays the real-account sign-in form without the demo role switch. Headless Chromium using the supplied proxy cannot yet verify hosted API requests: it reports `net::ERR_CERT_AUTHORITY_INVALID` for Auth settings and PostgREST. The browser needs to trust the managed proxy's CA before browser authentication can be verified; TLS verification was not disabled.
 
-Deployment update (November 14, 2026): the app is deployed at `https://mobiusbg.netlify.app`. Supabase's Site URL and redirect allowlist use that origin, and the first administrator account exists. The app supports email signup at `/join`, followed by email confirmation and administrator approval. Hosted public signup remains disabled until SMTP is configured and tested; anonymous sign-ins remain disabled and email confirmation remains required. The current hosted email limit is 2 per hour and must be reviewed when custom SMTP is configured. Production email delivery has not been verified; the integration suite is intentionally restricted to the local stack.
+Deployment update (November 14, 2026): the app is deployed at `https://mobiusbg.netlify.app`. Supabase's Site URL and redirect allowlist use that origin, and the first administrator account exists. The app supports email signup at `/join`, followed by email confirmation and administrator approval. Hosted public signup and Google sign-in are enabled, Gmail SMTP is configured with a limit of 30 emails per hour, and email confirmation remains required. Anonymous sign-ins remain disabled. The approval worker's SMTP setup email was accepted by Gmail and confirmed received by the owner; the integration suite is intentionally restricted to the local stack.
 
 ## First administrator
 
@@ -38,13 +38,13 @@ Create or invite your own account in Supabase Authentication → Users. If you w
 
 ```sql
 update public.profiles
-set role = 'admin', active = true
+set role = 'super_admin', active = true
 where id = (select id from auth.users where email = 'YOUR_EMAIL_HERE');
 ```
 
 Check that exactly one intended profile was updated. Administrator status is never taken from user-supplied metadata, a browser role switch, or the first sign-up.
 
-Members register at `/join` using email and a password of at least 12 characters. After verifying their email, they see **Awaiting group approval**. New accounts always start as inactive members, regardless of user-supplied metadata. In the app's **Members** tab, click **Approve membership** for each intended member. Their waiting screen refreshes automatically or they can click **Check membership**. Approval and email confirmation are independent requirements: approving a profile does not bypass Auth email verification. Deactivation revokes database access even for already signed-in users. Administrators may still invite accounts through Supabase Authentication → Users. Changes to administrator roles remain a trusted SQL-editor operation.
+Members register at `/join` using email and a password of at least 12 characters. After verifying their email, they see **Awaiting group approval**. New accounts always start as inactive members, regardless of user-supplied metadata. In the app's **Members** tab, click **Approve membership** for each intended member. Their waiting screen refreshes automatically or they can click **Check membership**. Approval and email confirmation are independent requirements: approving a profile does not bypass Auth email verification. Deactivation revokes database access even for already signed-in users. Administrators may still invite accounts through Supabase Authentication → Users. The super admin can assign posting-only Admin or Member roles from **Members**. Super-admin accounts are protected from app-based demotion and deactivation; adding another super admin is a trusted SQL-editor operation.
 
 ## Security and data behavior
 

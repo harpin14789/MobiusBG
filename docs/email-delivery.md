@@ -2,7 +2,7 @@
 
 Mobius uses Supabase to send signup confirmation and password-reset emails. Configure the sender in **Supabase → Project settings → Authentication → SMTP settings** (the dashboard may group this under Authentication → Email). No SMTP password or API key belongs in GitHub, Netlify's public variables, or chat.
 
-Hosted signup is deliberately disabled until this setup is complete. The signup form is implemented at `https://mobiusbg.netlify.app/join`; it reports when account creation is unavailable rather than claiming an email was sent.
+Gmail SMTP is now configured and hosted signup is enabled. The signup form is implemented at `https://mobiusbg.netlify.app/join`; it reports when account creation is unavailable rather than claiming an email was sent.
 
 ## Starting with Gmail
 
@@ -22,7 +22,7 @@ For a small initial group, the existing Gmail account can be used as the SMTP se
    | Password | The Google App Password, entered privately |
 
 4. Save the SMTP configuration. Preserve TLS; do not use a setting that skips certificate validation.
-5. Review **Authentication → Rate limits**. The project's current limit is 2 emails per hour. After custom SMTP is configured, choose a modest limit appropriate for the group (for example, 30 per hour) within the sender account's quota. Google's separate sending limits apply across normal Gmail messages and app email; review [Google's current Gmail sending guidance](https://support.google.com/mail/answer/22839).
+5. Review **Authentication → Rate limits**. The project's configured limit is 30 emails per hour. After custom SMTP is configured, choose a modest limit appropriate for the group (for example, 30 per hour) within the sender account's quota. Google's separate sending limits apply across normal Gmail messages and app email; review [Google's current Gmail sending guidance](https://support.google.com/mail/answer/22839).
 
 Gmail is a starting option, with account-level sending limits and anti-abuse restrictions. A dedicated transactional email provider is preferable as volume or reliability requirements grow.
 

@@ -8,7 +8,8 @@
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "test": "playwright test",
-    "test:supabase": "playwright test --config playwright.supabase.config.ts"
+    "test:supabase": "playwright test --config playwright.supabase.config.ts",
+    "test:alerts": "node --test supabase/functions/approval-alerts/handler.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.119.0",

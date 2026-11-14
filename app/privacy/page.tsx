@@ -46,7 +46,7 @@ export default function PrivacyPage() {
 
         <section aria-labelledby="sharing">
           <h2 id="sharing">4. Who can access information</h2>
-          <p>Approved members can see shared deals and group availability, along with their own reservations and payout details. Other members cannot view your private reservation and payout records through the workspace. Authorized administrators can access membership and group records to operate the buying group.</p>
+          <p>Approved members can see shared deals and group availability, along with their own reservations and payout details. Other members cannot view your private reservation and payout records through the workspace. Posting-only admins can view and create deals. The super administrator can access membership, delivery, and payment records to operate the buying group. When a new account verifies its email and awaits approval, we send its email address to the super administrator in an approval notification.</p>
           <p>We use service providers to operate Mobius: <a href="https://supabase.com/privacy">Supabase</a> for authentication and database storage, <a href="https://www.netlify.com/privacy/">Netlify</a> for hosting, and <a href="https://policies.google.com/privacy">Google</a> when you choose Google sign-in. A configured email provider also processes recipient addresses and message contents to deliver account confirmation and recovery emails. These providers process information under their applicable terms and policies.</p>
           <p>We may disclose information when required by law or reasonably necessary to protect users, address fraud or security incidents, or enforce our agreements. We do not sell your personal information.</p>
         </section>

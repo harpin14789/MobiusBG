@@ -1,10 +1,10 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Deal, Reservation, State } from "./store";
+import type { Deal, Reservation, State, DeliverySubmission, LabelRequest } from "./store";
 
 export type Profile = {
   id: string;
   email: string;
-  role: "member" | "admin";
+  role: "member" | "admin" | "super_admin";
   active: boolean;
 };
 export const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
@@ -56,10 +56,12 @@ export async function loadWorkspace(
   client: SupabaseClient,
   admin: boolean,
 ): Promise<{ state: State; members: Profile[] }> {
-  const [deals, reservations, members] = await Promise.all([
+  const [deals, reservations, members, submissions, labels] = await Promise.all([
     rows<DealRow>(client, "deals"),
     rows<ReservationRow>(client, "reservations"),
     admin ? rows<Profile>(client, "profiles") : Promise.resolve([]),
+    rows<DeliverySubmission>(client, "delivery_submissions"),
+    rows<LabelRequest>(client, "label_requests"),
   ]);
   return {
     state: {
@@ -71,6 +73,8 @@ export async function loadWorkspace(
           createdAt: r.created_at,
           memberId: r.member_id,
           memberEmail: members.find((m) => m.id === r.member_id)?.email,
+          submissions: submissions.filter((s) => s.reservation_id === r.id),
+          labelRequest: labels.find((label) => label.reservation_id === r.id),
         }))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     },
@@ -88,7 +92,7 @@ export async function rpc(
 }
 
 export async function postDeal(client: SupabaseClient, d: Deal) {
-  await rpc(client, "create_deal", {
+  await rpc(client, "create_deal_with_labels", {
     p_id: d.id,
     p_title: d.title,
     p_category: d.category,
@@ -99,5 +103,6 @@ export async function postDeal(client: SupabaseClient, d: Deal) {
     p_capacity: d.capacity,
     p_deadline: d.deadline,
     p_instructions: d.instructions,
+    p_label_min_quantity: d.label_min_quantity ?? null,
   });
 }

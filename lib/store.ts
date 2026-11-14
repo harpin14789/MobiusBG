@@ -10,6 +10,25 @@ export type Deal = {
   deadline: string;
   instructions: string;
   reserved?: number;
+  label_min_quantity?: number | null;
+};
+export type LabelRequest = {
+  id: string; reservation_id: string; member_id: string; email: string;
+  contact: string; origin_zip: string; box_quantities: number[]; box_weights: number[];
+  quantity: number; status: "requested" | "in_progress" | "completed";
+};
+export type DeliverySubmission = {
+  id: string;
+  reservation_id: string;
+  member_id: string;
+  email: string;
+  payment_name: string;
+  upc: string;
+  method: string;
+  reference: string;
+  quantity: number;
+  destination: string;
+  amazon_otp: string;
 };
 export type Reservation = {
   id: string;
@@ -25,6 +44,8 @@ export type Reservation = {
   paid: number;
   memberId?: string;
   memberEmail?: string;
+  submissions?: DeliverySubmission[];
+  labelRequest?: LabelRequest;
 };
 export type State = { deals: Deal[]; reservations: Reservation[] };
 export const money = (cents: number) =>
