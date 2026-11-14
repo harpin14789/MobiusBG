@@ -421,7 +421,7 @@ export default function Workspace({ signup = false }: { signup?: boolean }) {
             {message}
           </p>
         )}
-        <p><Link className="auth-link" href="/">← Back to Mobius</Link></p>
+        <p><Link className="auth-link" href="/">← Back to Mobius</Link> · <Link className="auth-link" href="/privacy">Privacy policy</Link></p>
       </div>
     </main>
   );

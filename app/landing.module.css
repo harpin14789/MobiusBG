@@ -470,6 +470,17 @@
   font-weight:700;
   letter-spacing:-1px;
 }
+.footerLinks {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  font-size: 11px;
+}
+.footerLinks a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .footer>span {
   font-size:10px;
   color:#8a9080;
