@@ -41,3 +41,11 @@ Keep `.env.local`, service-role keys, access tokens, SMTP passwords, OAuth secre
 ## Working together
 
 Before starting, pull the latest changes and check `git status`. Preserve existing work and review the current implementation before modifying a feature. Coordinate production database migrations, email changes, and deployment with the project owner; do not reset databases or expose real member data during testing. Use the local Supabase stack for integration tests. After changes, update the relevant documentation and changelog when useful, run checks appropriate to the change, and describe any remaining deployment steps or unverified behavior.
+
+## Keeping the handoff current
+
+Every developer or coding agent working on MobiusBG should update this file and [CHANGELOG.md](CHANGELOG.md) alongside development changes. Keep the sections above accurate for the current application; record concise recent handoff notes below when useful, including verification, deployment steps, known issues, and unfinished work. Avoid duplicating sensitive data or credentials. Review Git history and the current code when resuming work, since deployments and service settings can change independently.
+
+### Recent development handoff
+
+- Shared documentation instructions added so future contributors update the handoff and changelog together with development work. Documentation-only change; no application behavior or service configuration changed.

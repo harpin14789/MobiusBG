@@ -11,3 +11,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## Project context
 
 Read [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md) for the product workflows, roles, setup, deployment, and links to detailed documentation before making project changes.
+
+## Shared development handoff
+
+For every development change, update `CHANGELOG.md` with a concise description of the change and update `PROJECT_HANDOFF.md` to reflect any changes to current functionality, workflows, architecture, setup, deployment, tests, known limitations, or outstanding work. If the current-state handoff does not need a substantive change, add a brief entry to its recent development handoff section instead. Keep the handoff accurate and remove or revise stale statements. Record verification performed and any remaining deployment or follow-up steps when relevant. Never add credentials, secrets, or private member data. Include these documentation updates in the same commit or pull request as the development work whenever possible.

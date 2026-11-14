@@ -33,3 +33,7 @@ This document summarizes the development recorded in this repository, from the i
 The app is hosted on Netlify and uses Supabase for authentication, data, and scheduled email processing. GitHub's `main` branch is connected to Netlify for deployment. The repository includes local browser, database integration, and alert-worker tests. See [Supabase setup](docs/supabase.md) for configuration and testing instructions.
 
 This history summarizes work represented in the repository; it does not claim that every production integration has been independently verified for every user or provider.
+
+## Shared development handoff
+
+- Added `PROJECT_HANDOFF.md` and instructions for developers and coding agents to maintain the handoff and changelog as the project evolves.
