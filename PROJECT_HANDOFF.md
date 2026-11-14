@@ -42,6 +42,10 @@ Keep `.env.local`, service-role keys, access tokens, SMTP passwords, OAuth secre
 
 Before starting, pull the latest changes and check `git status`. Preserve existing work and review the current implementation before modifying a feature. Coordinate production database migrations, email changes, and deployment with the project owner; do not reset databases or expose real member data during testing. Use the local Supabase stack for integration tests. After changes, update the relevant documentation and changelog when useful, run checks appropriate to the change, and describe any remaining deployment steps or unverified behavior.
 
+## Planned requirements
+
+The co-founder’s proposed regional and fulfillment commitment caps, label delivery, Blue Ocean receipt verification, pending-payment adjustments, invoices, and possible ACH export are recorded in [future fulfillment requirements](docs/future-fulfillment-requirements.md). These are not yet implemented; review the open decisions in that document before building. In particular, post-receipt payout adjustments conflict with the current rule locking reservation prices after receipt.
+
 ## Keeping the handoff current
 
 Every developer and AI coding assistant, regardless of model or tool, working on MobiusBG should read [AGENTS.md](AGENTS.md) and update this file and [CHANGELOG.md](CHANGELOG.md) alongside development changes. Keep the sections above accurate for the current application; record concise recent handoff notes below when useful, including verification, deployment steps, known issues, and unfinished work. Avoid duplicating sensitive data or credentials. Review Git history and the current code when resuming work, since deployments and service settings can change independently.

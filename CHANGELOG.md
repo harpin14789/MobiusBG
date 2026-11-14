@@ -37,3 +37,7 @@ This history summarizes work represented in the repository; it does not claim th
 ## Shared development handoff
 
 - Added `PROJECT_HANDOFF.md` and instructions for developers and AI coding assistants using any model or tool to maintain the handoff and changelog as the project evolves.
+
+## Planned fulfillment requirements
+
+- Documented proposed regional and delivery-method caps, delivery and Blue Ocean receipt workflows, pending-payment adjustments, invoices, and a possible future US Bank ACH export. These are requirements for future development, not implemented features.
