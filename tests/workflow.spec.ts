@@ -126,3 +126,24 @@ test("deal posters can add retailers, edit a deal, and delete it while preservin
   await page.getByRole('button',{name:'My reservations',exact:true}).click();
   await expect(page.locator('tbody tr')).toContainText('Updated Quest');
 });
+
+test('member deliveries appear only after submission and reservations omit received status',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:'Reserve units'}).first().click();
+  await page.getByRole('button',{name:'Confirm reservation'}).click();
+  await page.getByRole('button',{name:'My reservations',exact:true}).click();
+  await expect(page.getByRole('columnheader',{name:'Received',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Deliveries',exact:true}).click();
+  await expect(page.getByText('No deliveries yet')).toBeVisible();
+  await expect(page.locator('tbody tr')).toHaveCount(0);
+  await page.getByRole('button',{name:'My reservations',exact:true}).click();
+  await page.getByRole('button',{name:'Add delivery'}).click();
+  await page.getByLabel('Name on payment account').fill('Test Member');
+  await page.getByLabel('Product UPC',{exact:true}).fill('195133197656');
+  await page.getByLabel('Tracking number or drop-off reference').fill('TRACK123');
+  await page.getByLabel('Destination address',{exact:true}).selectOption('Blue Ocean Dropoff');
+  await page.getByRole('button',{name:'Save delivery details'}).click();
+  await page.getByRole('button',{name:'Deliveries',exact:true}).click();
+  await expect(page.locator('tbody tr')).toContainText('TRACK123');
+  await expect(page.getByRole('columnheader',{name:'Received',exact:true})).toBeVisible();
+});

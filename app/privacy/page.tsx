@@ -28,7 +28,7 @@ export default function PrivacyPage() {
             <li><strong>Google sign-in information:</strong> if you choose Google, we receive the account identifier and basic profile information Google provides, such as your email address, name, and profile picture. Mobius does not receive your Google password.</li>
             <li><strong>Buying group records:</strong> deals you create or reserve, reserved quantities, saved payout terms, delivery methods, tracking numbers or drop-off references, received quantities, and recorded payments. We also keep audit records of relevant membership and transaction changes.</li>
             <li><strong>Communications:</strong> information you choose to send when contacting us or requesting support.</li>
-            <li><strong>Payout information:</strong> the payment method you choose and its recipient details. US bank transfer profiles include account-holder and bank names, account type, routing number, and account number. Zelle profiles include a registered name and email or phone. Taekus Pay profiles include your exact platform name and payment code. Shipping-label requests include contact information, origin ZIP code, quantities per box, and box weights.</li>
+            <li><strong>Payout information:</strong> the payment methods you choose and their recipient details. US bank transfer profiles include account-holder and bank names, account type, routing number, and account number. Zelle profiles include a registered name and email or phone. Taekus Pay profiles include your exact platform name and payment code. Shipping-label requests include contact information, origin ZIP code, quantities per box, and box weights.</li>
             <li><strong>Technical information:</strong> our hosting and authentication providers may process IP addresses, browser and device information, sign-in events, and request logs to operate and protect the service.</li>
           </ul>
           <p>Mobius records payout status and stores the payout details you provide to arrange payments outside the app. Saving payment information does not initiate a transfer. The workspace does not request card numbers. Please enter payout details only in your profile, rather than in delivery references or support messages.</p>
@@ -36,7 +36,7 @@ export default function PrivacyPage() {
 
         <section aria-labelledby="use">
           <h2 id="use">2. How we use information</h2>
-          <p>We use information to create and authenticate accounts, review membership requests, manage deals and reservations, coordinate deliveries, track receipts and payments, respond to support requests, prevent misuse, and maintain business and audit records. Administrators decide whether to approve membership; signing in does not automatically grant access to the group.</p>
+          <p>We use information to create and authenticate accounts, review membership requests, manage deals and reservations, coordinate deliveries, track receipts and payments, respond to support requests, prevent misuse, and maintain business and audit records. We also email active members about new or updated deals and email the affected member when receipts or payments are recorded. Administrators decide whether to approve membership; signing in does not automatically grant access to the group.</p>
         </section>
 
         <section aria-labelledby="google">

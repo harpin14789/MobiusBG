@@ -4,7 +4,7 @@ import { createHandler } from './handler.mjs';
 
 const secret = 'local-test-worker-secret';
 const alert = { member_id: '11111111-1111-4111-8111-111111111111', email: 'pending@example.test', lease_token: 'lease' };
-function fixture({ alerts = [alert], paymentAlerts = [], mailError, completeError, claimError } = {}) {
+function fixture({ alerts = [alert], paymentAlerts = [], memberEvents = [], mailError, completeError, claimError } = {}) {
   const sent = [], calls = [];
   const handler = createHandler({
     secret, sender: { address: 'sender@example.test' },
@@ -14,6 +14,7 @@ function fixture({ alerts = [alert], paymentAlerts = [], mailError, completeErro
       calls.push({ name, args });
       if (name === 'claim_approval_alerts') return { data: alerts, error: claimError };
       if (name === 'claim_payment_change_alerts') return { data: paymentAlerts, error: null };
+      if (name === 'claim_member_event_alerts') return { data: memberEvents, error: null };
       return { data: !completeError, error: completeError };
     } },
   });
@@ -85,4 +86,16 @@ test('payment update alerts identify the member without copying private payment 
   assert.ok(!f.sent[0].text.includes('sensitive-bank-number'));
   assert.ok(!f.sent[0].text.includes('secret-code'));
   assert.equal(f.calls.find(c=>c.name==='complete_payment_change_alert').args.p_id,'payment-event-id');
+});
+
+
+test('member receipts and payments only go to the affected member and use recorded-payment wording', async () => {
+  const f=fixture({alerts:[],memberEvents:[{id:'event-1',member_id:alert.member_id,email:'member@example.test',kind:'paid',deal_title:'Sample deal',quantity_delta:2,total_units:3,amount_cents:50000,lease_token:'lease'}]});
+  const result=await f.request({to:'attacker@example.test'});
+  assert.equal(result.status,200);
+  assert.equal(f.sent[0].to,'member@example.test');
+  assert.match(f.sent[0].text,/Sample deal/);
+  assert.match(f.sent[0].text,/\$500.00/);
+  assert.match(f.sent[0].text,/recorded update/);
+  assert.equal(f.calls.find(c=>c.name==='complete_member_event_alert').args.p_id,'event-1');
 });

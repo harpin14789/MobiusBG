@@ -496,8 +496,8 @@ export default function Dashboard({
       );
   }
 
-  const visibleReservations = state.reservations.filter(r => !superAdmin ||
-    `${state.deals.find(d=>d.id===r.dealId)?.title} ${r.memberEmail || ""} ${members.find(m=>m.id===r.memberId)?.full_name || ""} ${r.reference}`.toLowerCase().includes(reservationSearch.toLowerCase()));
+  const visibleReservations = state.reservations.filter(r => (admin || tab !== "Deliveries" || r.submitted) && (!superAdmin ||
+    `${state.deals.find(d=>d.id===r.dealId)?.title} ${r.memberEmail || ""} ${members.find(m=>m.id===r.memberId)?.full_name || ""} ${r.reference}`.toLowerCase().includes(reservationSearch.toLowerCase())));
   const reservationGroups = state.deals.map(deal => ({deal, entries: state.reservations.filter(r=>r.dealId===deal.id)}))
     .filter(group => group.entries.length && `${group.deal.title} ${group.entries.map(r=>r.memberEmail || "").join(" ")}`.toLowerCase().includes(reservationSearch.toLowerCase()));
   const groupReservations = <div className="table-wrap"><table><thead><tr><th>Deal</th><th>Reserved / capacity</th><th>Members</th><th>Received</th><th>Unpaid received units</th><th>Details</th></tr></thead><tbody>
@@ -511,7 +511,7 @@ export default function Dashboard({
             <th>Product / reservation</th>
             <th>Quantity</th>
             <th>Delivery</th>
-            <th>Received</th>
+            {(admin || tab === "Deliveries") && <th>Received</th>}
             <th>Total payout</th>
             <th>Action</th>
           </tr>
@@ -553,9 +553,7 @@ export default function Dashboard({
                     <span className="badge amber">Awaiting details</span>
                   )}
                 </td>
-                <td>
-                  {r.received} / {r.quantity}
-                </td>
+                {(admin || tab === "Deliveries") && <td>{r.received} / {r.quantity}</td>}
                 <td>
                   <strong>{money(r.quantity * (r.base + r.commission))}</strong>
                   <small>{money(r.paid * (r.base + r.commission))} paid</small>
@@ -622,13 +620,12 @@ export default function Dashboard({
           })}
         </tbody>
       </table>
-      {state.reservations.length === 0 && (
+      {visibleReservations.length === 0 && (
         <div className="empty">
           <Package size={32} />
-          <h3>Your next deal starts here</h3>
+          <h3>{!admin && tab === "Deliveries" ? "No deliveries yet" : "Your next deal starts here"}</h3>
           <p>
-            Reserve a few units from an open deal to start tracking your
-            deliveries and payouts.
+            {!admin && tab === "Deliveries" ? "Add delivery details to a reservation to see it here." : "Reserve a few units from an open deal to start tracking your deliveries and payouts."}
           </p>
           <button className="primary" onClick={() => setTab("Deals")}>
             Explore deals <ArrowRight size={16} />
@@ -749,12 +746,12 @@ export default function Dashboard({
               <div className="eyebrow">YOUR BUYING GROUP, CONNECTED</div>
               <h1>
                 {tab === "Overview"
-                  ? "A little less chat. A lot more clarity."
+                  ? superAdmin ? "Your group at a glance." : "A little less chat. A lot more clarity."
                   : tab}
               </h1>
               <p>
                 {tab === "Overview"
-                  ? "Every deal, delivery, and payout. Right where you need it."
+                  ? superAdmin ? "Manage group deals, member reservations, deliveries, and payouts." : "Every deal, delivery, and payout. Right where you need it."
                   : tab === "Deals"
                     ? "Find your next deal. See the capacity. Reserve your units."
                     : tab === "Payouts"
@@ -825,12 +822,12 @@ export default function Dashboard({
                 <strong>{openDeals.length.toString().padStart(2, "0")}</strong>
                 <small>
                   <span className="green-dot" />
-                  Ready to reserve
+                  {superAdmin ? "Available to members" : "Ready to reserve"}
                 </small>
               </div>
               <div className="stat">
                 <div className="stat-top">
-                  Reserved units
+                  {superAdmin ? "Group reserved units" : "Reserved units"}
                   <Package size={17} />
                 </div>
                 <strong>{reservedUnits.toString().padStart(2, "0")}</strong>
@@ -838,7 +835,7 @@ export default function Dashboard({
               </div>
               <div className="stat">
                 <div className="stat-top">
-                  Awaiting payout
+                  {superAdmin ? "Group awaiting payout" : "Awaiting payout"}
                   <Clock3 size={17} />
                 </div>
                 <strong>{money(payable)}</strong>
@@ -846,7 +843,7 @@ export default function Dashboard({
               </div>
               <div className="stat">
                 <div className="stat-top">
-                  Total paid
+                  {superAdmin ? "Group paid" : "Total paid"}
                   <ArrowDownLeft size={17} />
                 </div>
                 <strong>{money(paid)}</strong>
@@ -854,7 +851,7 @@ export default function Dashboard({
               </div>
             </section>
           )}
-          {(tab === "Overview" || tab === "Deals") && (
+          {((tab === "Overview" && !superAdmin) || tab === "Deals") && (
             <>
               <section className="section-heading">
                 <div>
@@ -864,7 +861,7 @@ export default function Dashboard({
                       : "Open opportunities"}
                     <span className="count">{visibleDeals.length}</span>
                   </h2>
-                  <p>Good deals move fast. Lock in your spot.</p>
+                  <p>{canPostDeals ? "Review and manage deals for the group." : "Good deals move fast. Lock in your spot."}</p>
                 </div>
                 {tab === "Overview" && (
                   <button
@@ -960,7 +957,7 @@ export default function Dashboard({
                         <div className="payout-line">
                           <div>
                             <span className="field-caption">
-                              YOU RECEIVE / UNIT
+                              {canPostDeals ? "MEMBER PAYOUT / UNIT" : "YOU RECEIVE / UNIT"}
                             </span>
                             <strong>{money(d.base + d.commission)}</strong>
                           </div>

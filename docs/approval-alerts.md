@@ -5,7 +5,7 @@ The owner, `themobiusenterprises@gmail.com`, receives an alert when a new accoun
 ## Components
 
 - `20261114000200_approval_alerts.sql` adds a private queue and an Auth user trigger. Signup writes only to the queue and does not wait for email delivery. A unique member ID prevents repeat signup/update alerts.
-- The `approval-alerts` Supabase Edge Function claims up to five queued records per run and uses the configured Gmail account to send only to the fixed owner address.
+- The `approval-alerts` Supabase Edge Function sends owner alerts to the fixed owner address and member event emails to the affected member from the protected queue.
 - The scheduler in `supabase/approval-alerts-schedule.sql` invokes the worker every two minutes. A secret shared between Edge secrets and database Vault authenticates it; it is never included in browser code or the cron command. JWT gateway checks are disabled for this worker because it validates its own random scheduler secret.
 - Leases prevent concurrent workers from claiming the same event. SMTP failures retry with exponential backoff, up to five attempts. Accounts approved before delivery are skipped. Delivery is at least once: a crash after SMTP acceptance but before acknowledgment can cause a duplicate; deterministic message IDs help mail threading but do not guarantee deduplication by Gmail.
 
@@ -37,3 +37,7 @@ select jobname, active from cron.job where jobname = 'mobius-approval-alerts';
 Errors store a sanitized category, not the SMTP response or password. Fix the delivery configuration before requeueing a failed item in the SQL editor. Monitor the cron job and provider logs; an accepted SMTP message does not guarantee inbox placement. No existing pending accounts are backfilled by the migration.
 
 `npm run test:alerts` exercises worker authentication, fixed-recipient delivery, failure handling, and safe acknowledgment. `npm run test:supabase` exercises the real local queue, email-confirmation timing, lease protection, and membership approval. Local tests never send production notifications.
+
+## Member event emails
+
+Active, confirmed members receive an email for new and updated deals. Receipt and recorded-payment events go only to the reservation owner. Emails are queued and retried; large deal announcements can take longer to deliver. Test accounts using example.test are excluded. Payments happen outside Mobius; a payment email reports a recorded update, not proof of a transfer. Existing events are not backfilled.

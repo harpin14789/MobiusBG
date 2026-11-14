@@ -409,7 +409,15 @@ test('members edit payment profiles and the super admin opens their profile from
   await expect(page.getByRole('heading',{name:'My profile',exact:true})).toBeVisible();
   await page.getByLabel('Full name',{exact:true}).fill('Profile Test Member');
   await page.getByLabel('Phone / WhatsApp',{exact:true}).fill('555-0100');
-  await page.getByLabel('Payment method',{exact:true}).selectOption('taekus');
+  await page.getByLabel('US bank transfer',{exact:true}).check();
+  await page.getByLabel('Name on bank account').fill('Profile Test Member');
+  await page.getByLabel('Bank name',{exact:true}).fill('Test Bank');
+  await page.getByLabel('Routing number',{exact:true}).fill('021000021');
+  await page.getByLabel('Account number',{exact:true}).fill('000123456789');
+  await page.getByLabel('Zelle',{exact:true}).check();
+  await page.getByLabel('Name registered with Zelle').fill('Profile Test Member');
+  await page.getByLabel('Zelle email or phone').fill('profile@example.test');
+  await page.getByLabel('Taekus Pay',{exact:true}).check();
   await page.getByLabel('Exact name on Taekus',{exact:true}).fill('Profile Test Member Jr');
   await page.getByLabel('Taekus Pay alphanumeric code',{exact:true}).fill('TAEKUS123abc');
   await page.getByRole('button',{name:'Save profile',exact:true}).click();
@@ -427,9 +435,69 @@ test('members edit payment profiles and the super admin opens their profile from
     await expect(owner.getByRole('heading',{name:'Profile Test Member',exact:true})).toBeVisible();
     await expect(owner.getByText('TAEKUS123abc',{exact:true})).toBeVisible();
     await expect(owner.getByText('Profile Test Member Jr',{exact:true})).toBeVisible();
+    await expect(owner.getByText('profile@example.test',{exact:true})).toBeVisible();
+    await expect(owner.getByText('•••• 6789',{exact:true})).toBeVisible();
+    await owner.getByRole('button',{name:'Show bank details',exact:true}).click();
+    await expect(owner.getByText('000123456789',{exact:true})).toBeVisible();
     await expect(owner.getByRole('button',{name:'Save profile',exact:true})).toHaveCount(0);
     expect((await other.rpc('get_member_profile',{p_member_id:created.id,p_reveal_payment:true})).error).not.toBeNull();
   }finally{await context.close();}
+});
+
+test('members retain one of each payment method, with private bank details and one change alert',async()=>{
+  const account=await user(`methods-${run}@example.test`,'member',true);
+  const legacy={p_full_name:'Methods Member',p_phone:'',p_discord:'',p_payment_method:'bank',p_payment_details:{account_holder:'Methods Member',bank_name:'Test Bank',account_type:'checking',routing_number:'021000021',account_number:'000123456789'}};
+  expect((await account.client.rpc('save_member_profile',legacy)).error).toBeNull();
+  const before=await account.client.rpc('get_member_payment_methods',{p_member_id:null,p_reveal_payment:false});
+  expect(before.error).toBeNull();expect(before.data.bank.account_last4).toBe('6789');expect(before.data.bank).not.toHaveProperty('account_number');
+  const methods={bank:{account_holder:'Methods Member',bank_name:'Test Bank',account_type:'checking',routing_number:'',account_number:''},zelle:{name:'Methods Member',identifier:'member@example.test'},taekus:{name:'Exact Platform Name',code:'AbC123'}};
+  const save={p_full_name:'Methods Member',p_phone:'',p_discord:'',p_methods:methods};
+  expect((await account.client.rpc('save_member_payment_methods',save)).error).toBeNull();
+  const view=await admin.rpc('get_member_payment_methods',{p_member_id:account.id,p_reveal_payment:true});
+  expect(view.data.bank.account_number).toBe('000123456789');
+  expect(view.data.zelle.identifier).toBe('member@example.test');
+  expect(view.data.taekus).toEqual({name:'Exact Platform Name',code:'AbC123'});
+  expect((await other.rpc('get_member_payment_methods',{p_member_id:account.id,p_reveal_payment:true})).error).not.toBeNull();
+  expect((await account.client.rpc('save_member_payment_methods',{...save,p_methods:{...methods,taekus:{name:'Test',code:'invalid-code'}}})).error).not.toBeNull();
+  expect((await account.client.rpc('save_member_payment_methods',{...save,p_methods:{zelle:methods.zelle,taekus:methods.taekus}})).error).toBeNull();
+  const after=await account.client.rpc('get_member_payment_methods',{p_member_id:null,p_reveal_payment:false});
+  expect(after.data).not.toHaveProperty('bank');expect(after.data).toHaveProperty('zelle');expect(after.data).toHaveProperty('taekus');
+});
+
+test('member event emails target active confirmed members and only the affected reservation owner',async()=>{
+  const target=await user(`notify-${run}@sample.invalid`,'member',true);
+  const take=async(kind:string)=>{
+    for(let n=0;n<100;n++){
+      const claimed=await service.rpc('claim_member_event_alerts');expect(claimed.error).toBeNull();
+      const found=claimed.data.find((x:{member_id:string,kind:string})=>x.member_id===target.id && x.kind===kind);
+      for(const item of claimed.data)await service.rpc('complete_member_event_alert',{p_id:item.id,p_lease_token:item.lease_token,p_sent:true,p_error:null});
+      if(found)return found;
+      if(!claimed.data.length)break;
+    }
+    throw Error(`Missing ${kind} email`);
+  };
+  const id=await deal(3);const created=await take('deal_created');expect(created.email).toBe(`notify-${run}@sample.invalid`);
+  const update={p_id:id,p_title:'Updated deal notice',p_category:'Laptops',p_base:10000,p_commission:0,p_capacity:3,p_deadline:'2099-12-31',p_instructions:'Updated',p_label_min_quantity:null,p_retailers:[{name:'Shop',url:'https://example.com'}]};
+  expect((await admin.rpc('update_deal',update)).error).toBeNull();expect((await take('deal_updated')).deal_title).toBe('Updated deal notice');
+  const reserved=await reserve(target.client,id,2);expect(reserved.error).toBeNull();
+  expect((await admin.rpc('record_units',{p_id:reserved.data,p_kind:'received',p_units:1})).error).toBeNull();
+  const receipt=await take('received');expect(receipt.quantity_delta).toBe(1);expect(receipt.total_units).toBe(1);
+  expect((await admin.rpc('record_units',{p_id:reserved.data,p_kind:'paid',p_units:1})).error).toBeNull();
+  const payment=await take('paid');expect(payment.amount_cents).toBe(10000);
+  expect((await target.client.rpc('claim_member_event_alerts')).error).not.toBeNull();
+  expect((await service.from('profiles').update({active:false}).eq('id',target.id)).error).toBeNull();
+});
+
+test('super admin can edit their contact profile without seeing payout fields',async({page})=>{
+  await page.goto('/workspace');await page.getByLabel('Email',{exact:true}).fill(emails.admin);
+  await page.getByLabel('Password',{exact:true}).fill(password);await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByRole('link',{name:'My profile',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'My profile'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Payment information'})).toHaveCount(0);
+  await expect(page.getByLabel('US bank transfer',{exact:true})).toHaveCount(0);
+  await page.getByLabel('Full name',{exact:true}).fill('Super Admin');
+  await page.getByRole('button',{name:'Save profile'}).click();
+  await expect(page.getByRole('status')).toContainText('Profile saved.');
 });
 
 test('super admin manages grouped reservations and only members can reserve units',async({page})=>{
