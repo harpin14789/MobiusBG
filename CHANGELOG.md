@@ -45,3 +45,5 @@ This history summarizes work represented in the repository; it does not claim th
 - Clarified the planned caps as separate limits for each region and delivery-method combination; invoice generation is deferred for later discussion.
 
 - Added a proposed staged implementation plan, acceptance checks, and unresolved workflow decisions for the future fulfillment and payout work.
+
+- Recorded planning decisions: use the member’s saved profile region, allow multiple delivery methods per deal, and support both per-unit and separate-dollar pending payout adjustments.
