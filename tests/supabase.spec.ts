@@ -360,6 +360,33 @@ test('shipping labels enforce deal eligibility and box minimums and can be handl
   } finally {await context.close();}
 });
 
+test('super admin deliveries contain only submitted deliveries and no member submission actions',async({page})=>{
+  const make=async(title:string)=>{
+    const id=randomUUID();
+    const created=await admin.rpc('create_deal_with_labels',{p_id:id,p_title:title,p_category:'Laptops',p_retailer:'Test',p_url:'https://example.com',p_base:100,p_commission:0,p_capacity:5,p_deadline:'2099-12-31',p_instructions:'Test',p_label_min_quantity:1});
+    expect(created.error).toBeNull();return id;
+  };
+  const pendingTitle=`Unsubmitted ${run}`,submittedTitle=`Submitted ${run}`;
+  const pending=await reserve(member,await make(pendingTitle),2);
+  const submitted=await reserve(member,await make(submittedTitle),2);
+  expect(pending.error).toBeNull();expect(submitted.error).toBeNull();
+  expect((await member.rpc('save_delivery_submission',{p_reservation_id:submitted.data,p_submission_id:null,p_payment_name:'Test Member',p_upc:'195133197656',p_method:'Ship to warehouse',p_reference:'TEST123',p_quantity:1,p_destination:'Blue Ocean Dropoff',p_amazon_otp:''})).error).toBeNull();
+  await page.goto('/workspace');
+  await page.getByLabel('Email',{exact:true}).fill(emails.admin);
+  await page.getByLabel('Password',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.getByRole('button',{name:'Deliveries',exact:true}).click();
+  await page.getByLabel('Search group reservations').fill(run);
+  await expect(page.locator('tbody tr').filter({hasText:pendingTitle})).toHaveCount(0);
+  const row=page.locator('tbody tr').filter({hasText:submittedTitle});
+  await expect(row).toContainText('TEST123');
+  await expect(row.getByRole('button',{name:'Mark received'})).toBeVisible();
+  for(const label of ['Request shipping label','Edit label request','Add another UPC','Add delivery','Edit delivery'])
+    await expect(row.getByRole('button',{name:label,exact:true})).toHaveCount(0);
+  await row.getByText('1 item submission').click();
+  await expect(row.getByRole('button',{name:/Edit UPC/})).toHaveCount(0);
+});
+
 test('payment profiles enforce private access, mask bank details, and notify only for real payment changes',async()=>{
   const memberAccount=await user(`payment-${run}@example.test`,'member',true);
   const staff=await user(`payment-poster-${run}@example.test`,'admin',true);

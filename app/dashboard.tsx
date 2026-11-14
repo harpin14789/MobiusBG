@@ -496,7 +496,7 @@ export default function Dashboard({
       );
   }
 
-  const visibleReservations = state.reservations.filter(r => (admin || tab !== "Deliveries" || r.submitted) && (!superAdmin ||
+  const visibleReservations = state.reservations.filter(r => (tab !== "Deliveries" || r.submitted) && (!superAdmin ||
     `${state.deals.find(d=>d.id===r.dealId)?.title} ${r.memberEmail || ""} ${members.find(m=>m.id===r.memberId)?.full_name || ""} ${r.reference}`.toLowerCase().includes(reservationSearch.toLowerCase())));
   const reservationGroups = state.deals.map(deal => ({deal, entries: state.reservations.filter(r=>r.dealId===deal.id)}))
     .filter(group => group.entries.length && `${group.deal.title} ${group.entries.map(r=>r.memberEmail || "").join(" ")}`.toLowerCase().includes(reservationSearch.toLowerCase()));
@@ -546,7 +546,7 @@ export default function Dashboard({
                       {!!r.submissions?.length && <details className="submission-details"><summary>{r.submissions.length} item submission{r.submissions.length === 1 ? "" : "s"}</summary>{r.submissions.map(s => <div className="submission-record" key={s.id}>
                         <strong>UPC {s.upc} · {s.quantity} units</strong>
                         <small>{s.email}<br />Payment name: {s.payment_name}<br />Destination: {s.destination}<br />{s.reference}{s.amazon_otp && <><br />Amazon delivery OTP: {s.amazon_otp}</>}</small>
-                        <button className="text-button" onClick={() => {setDelivery(r);setEditingSubmission(s);setError("");}}>Edit UPC {s.upc}</button>
+                        {!admin && <button className="text-button" onClick={() => {setDelivery(r);setEditingSubmission(s);setError("");}}>Edit UPC {s.upc}</button>}
                       </div>)}</details>}
                     </>
                   ) : (
@@ -609,8 +609,8 @@ export default function Dashboard({
                       {r.submitted ? "Edit delivery" : "Add delivery"}
                     </button>
                   )}
-                  {!postingOnly && !!r.submissions?.length && r.submissions.reduce((n,s)=>n+s.quantity,0)<r.quantity && <button className="small-button" onClick={() => {setDelivery(r);setEditingSubmission(null);setError("");}}>Add another UPC</button>}
-                  {deal.label_min_quantity && !postingOnly && <div className="label-request-action">
+                  {!admin && !postingOnly && !!r.submissions?.length && r.submissions.reduce((n,s)=>n+s.quantity,0)<r.quantity && <button className="small-button" onClick={() => {setDelivery(r);setEditingSubmission(null);setError("");}}>Add another UPC</button>}
+                  {deal.label_min_quantity && !admin && !postingOnly && <div className="label-request-action">
                     {r.labelRequest && <small>Label request: {r.labelRequest.status.replace("_"," ")}</small>}
                     {r.quantity >= deal.label_min_quantity && (!r.labelRequest || r.labelRequest.status === "requested") ? <button className="small-button" onClick={() => {setLabelReservation(r);setError("");}}>{r.labelRequest ? "Edit label request" : "Request shipping label"}</button> : !r.labelRequest && <small>Prepaid label minimum: {deal.label_min_quantity} units</small>}
                   </div>}
@@ -623,9 +623,9 @@ export default function Dashboard({
       {visibleReservations.length === 0 && (
         <div className="empty">
           <Package size={32} />
-          <h3>{!admin && tab === "Deliveries" ? "No deliveries yet" : "Your next deal starts here"}</h3>
+          <h3>{tab === "Deliveries" ? "No deliveries yet" : "Your next deal starts here"}</h3>
           <p>
-            {!admin && tab === "Deliveries" ? "Add delivery details to a reservation to see it here." : "Reserve a few units from an open deal to start tracking your deliveries and payouts."}
+            {tab === "Deliveries" ? admin ? "Member submissions will appear here when delivery details are added." : "Add delivery details to a reservation to see it here." : "Reserve a few units from an open deal to start tracking your deliveries and payouts."}
           </p>
           <button className="primary" onClick={() => setTab("Deals")}>
             Explore deals <ArrowRight size={16} />
