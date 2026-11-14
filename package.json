@@ -1,0 +1,28 @@
+{
+  "name": "mobius-buying-group",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test",
+    "test:supabase": "playwright test --config playwright.supabase.config.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.119.0",
+    "lucide-react": "1.72.0",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "supabase": "3.1.0",
+    "typescript": "^5.9.0"
+  }
+}
